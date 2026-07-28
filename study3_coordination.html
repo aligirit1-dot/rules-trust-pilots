@@ -12,6 +12,7 @@
   <script src="https://unpkg.com/@jspsych/plugin-survey-multi-choice@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-html-slider-response@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-call-function@1.1.3"></script>
+  <script src="https://unpkg.com/@jspsych-contrib/plugin-pipe@0.4"></script>
   <link href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css" rel="stylesheet">
   <style>
     .jspsych-content { max-width: 860px; font-size: 17px; line-height: 1.65; }
@@ -489,6 +490,15 @@ const STUDY_ID     = urlParams.get('STUDY_ID')     || 'PREVIEW';
 const SESSION_ID   = urlParams.get('SESSION_ID')   || 'PREVIEW';
 const FORCE_COND   = urlParams.get('cond');   // piloting override: ?cond=control|signal|rule|rule_fine
 const PROLIFIC_COMPLETION_URL = 'https://app.prolific.co/submissions/complete?cc=XXXXXXXX';
+
+// DataPipe (pipe.jspsych.org) -> OSF data deposit. Experiment ID set at
+// DataPipe registration; the save trial runs after re-consent, before the
+// final screen, and is skipped in focus-group mode (local download there).
+const DATAPIPE_EXPERIMENT_ID = 'r1gJ9OjODGRZ';
+const DATA_FILENAME = 'study3_' + PROLIFIC_PID + '_' + jsPsych_randomFileTag();
+function jsPsych_randomFileTag() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + '.csv';
+}
 
 // 2026-04-26: focus-group mode. Activated by ?focus_group=1 in the URL.
 // Triggers (a) the in-task feedback widget, (b) a session-ID display +
@@ -1047,6 +1057,11 @@ timeline.push({
       <p>You will not be fully informed about the nature of the study before your participation, but you will be debriefed following your participation in the research.</p>
       <h3>Participation</h3>
       <p>Voluntary. You may withdraw at any time by closing your browser. There is a two-week withdrawal window via Prolific.</p>
+      <h3>Who is running this?</h3>
+      <p><strong>Ethics Reference:</strong> IRB-25-0482 (UCLA)<br>
+      <strong>Principal Investigator:</strong> Professor Daniel Fessler, UCLA (dfessler@anthro.ucla.edu)<br>
+      <strong>Lead Researcher and Primary Contact:</strong> Ali Giritlioğlu, Nottingham Trent University (ali.giritlioglu@ntu.ac.uk)<br>
+      <strong>Co-Investigator:</strong> Dr Tom Kupfer, NTU (tom.kupfer@ntu.ac.uk)</p>
       <h3>Compensation</h3>
       <p>£2.50 for approximately 15 minutes.</p>
     </div>
@@ -2797,7 +2812,8 @@ timeline.push({
       <h3>What was this study about?</h3>
       <p>This experiment investigates how <strong>rules</strong> and <strong>enforcement mechanisms</strong> shape trust in situations where your outcome depends on another person's behaviour, but you cannot see them, predict them individually, or rely on them sharing your interests. We varied whether the other participant's behaviour was constrained by nothing, by a colour signal, by a rule attached to that signal, or by a rule plus a penalty. We measured how this affected your willingness to cross the zone and your reported trust in the other participant.</p>
       <h3>Important disclosure</h3>
-      <p>The <strong>other participant was simulated.</strong> You were not paired with a real person; no-one was operating a dart. The simulated partner's timing was drawn from a probability distribution calibrated to the version of the task you completed — in the rule condition, for example, the simulated partner complied with the rule about 75% of the time; in the rule-plus-fine condition they always complied. This approach keeps the task consistent across participants and is standard in experimental research of this kind.</p>
+      <p>The <strong>other participant was simulated.</strong> You were not paired with another person. The other participant's behaviour was pre-programmed to ensure consistent experiences across all participants. This is standard practice in experimental research.</p>
+      <p>We understand this may be surprising. The use of a simulated partner was essential to test our research question, which required that all participants experience identical partner behaviour regardless of experimental condition.</p>
       <h3>Re-consent</h3>
       <p>Now that you know the true purpose and method of this study, do you consent to your data being used?</p>
       <p><em>Declining does not affect your compensation.</em></p>
@@ -2805,6 +2821,24 @@ timeline.push({
   `,
   choices: ['Yes, I consent', 'No, please delete my data'],
   data: { measure: 'reconsent' }
+});
+
+// ---- 15. DATA DEPOSIT (DataPipe -> OSF) ----
+// Runs only for live (non-focus-group) sessions where re-consent was given.
+// Declined re-consent = nothing deposited, honouring "delete my data".
+timeline.push({
+  timeline: [{
+    type: jsPsychPipe,
+    action: 'save',
+    experiment_id: DATAPIPE_EXPERIMENT_ID,
+    filename: DATA_FILENAME,
+    data_string: () => jsPsych.data.get().csv()
+  }],
+  conditional_function: function() {
+    if (FOCUS_GROUP) return false;
+    const rc = jsPsych.data.get().filter({ measure: 'reconsent' }).last(1).values()[0];
+    return !(rc && rc.response === 1);
+  }
 });
 
 timeline.push({

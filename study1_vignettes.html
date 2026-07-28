@@ -12,6 +12,7 @@
   <script src="https://unpkg.com/@jspsych/plugin-survey-multi-choice@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-html-slider-response@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-call-function@1.1.3"></script>
+  <script src="https://unpkg.com/@jspsych-contrib/plugin-pipe@0.4"></script>
   <link href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css" rel="stylesheet">
   <style>
     .jspsych-content { max-width: 780px; font-size: 17px; line-height: 1.65; }
@@ -73,6 +74,12 @@ const PROLIFIC_PID = urlParams.get('PROLIFIC_PID') || 'PREVIEW';
 const STUDY_ID = urlParams.get('STUDY_ID') || 'PREVIEW';
 const SESSION_ID = urlParams.get('SESSION_ID') || 'PREVIEW';
 const PROLIFIC_COMPLETION_URL = 'https://app.prolific.co/submissions/complete?cc=XXXXXXXX';
+
+// DataPipe (pipe.jspsych.org) -> OSF data deposit. Experiment ID set at
+// DataPipe registration; the save trial runs right before the end screen.
+const DATAPIPE_EXPERIMENT_ID = 'ncPULBp2sUUS';
+const DATA_FILENAME = 'study1_' + PROLIFIC_PID + '_' +
+  Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + '.csv';
 
 const jsPsych = initJsPsych({
   show_progress_bar: true,
@@ -475,6 +482,15 @@ timeline.push({
     </div>
   `,
   choices: ['Continue']
+});
+
+// --- 8b. DATA DEPOSIT (DataPipe -> OSF) ---
+timeline.push({
+  type: jsPsychPipe,
+  action: 'save',
+  experiment_id: DATAPIPE_EXPERIMENT_ID,
+  filename: DATA_FILENAME,
+  data_string: () => jsPsych.data.get().csv()
 });
 
 // --- 9. END ---
