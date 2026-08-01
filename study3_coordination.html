@@ -443,20 +443,26 @@
 <body></body>
 <script>
 // =========================================================
-// DESKTOP-ONLY GATE (added 2026-05-05)
-// Belt-and-braces alongside the Prolific desktop-only filter. The live task
-// involves precise click timing and a side-by-side ToM panel; both degrade
-// on small screens. Mobile / tablet user-agents are blocked here; the
-// participant is asked to return the submission on Prolific so the slot
-// recycles. Detection uses the standard mobile-UA regex; not foolproof
-// against UA spoofing, but the Prolific platform filter handles spoofing.
+// DESKTOP-ONLY GATE (added 2026-05-05, iPad case added 2026-07-31)
+// This gate is the ONLY thing enforcing desktop-only. Prolific's device
+// tick boxes are display-only — its own form says "These options don't
+// filter participants" — so there is no platform-side backstop and no
+// protection against UA spoofing. The live task involves precise click
+// timing and a side-by-side ToM panel; both degrade on small screens.
+// Blocked participants are asked to return the submission so the slot
+// recycles.
 // =========================================================
 (function() {
   const ua = navigator.userAgent || '';
-  const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|webOS/i.test(ua);
-  // Width fallback for desktop browsers in narrow windows: only block if
-  // the UA also looks mobile, so resized desktop windows are not affected.
-  if (isMobile) {
+  const uaMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|webOS/i.test(ua);
+  // iPadOS 13+ Safari sends a Macintosh UA by default, so the /iPad/ above
+  // never fires on a current iPad. maxTouchPoints is 0 or 1 on a Mac and >1
+  // on an iPad, and Apple sells no touchscreen Mac, so Macintosh + touch = iPad.
+  // Scoped to Macintosh on purpose: touchscreen Windows laptops report
+  // "Windows NT" and are ordinary desktop machines, so they pass through.
+  const iPadAsDesktop = /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+  // No width fallback: a resized desktop window should not be blocked.
+  if (uaMobile || iPadAsDesktop) {
     document.body.innerHTML = ''
       + '<div class="bz-mobile-block">'
       +   '<h1>Desktop or laptop required</h1>'
@@ -1029,10 +1035,17 @@ const timeline = [];
 timeline.push({
   type: jsPsychCallFunction,
   func: function() {
+    // Device shape recorded so "everyone was on a computer" is checkable in the
+    // data rather than assumed. Screen size and touch-point count only; no UA
+    // string, no IP, nothing that identifies a person.
     jsPsych.data.addProperties({
       prolific_pid: PROLIFIC_PID, study_id: STUDY_ID, session_id: SESSION_ID,
       assigned_condition: assignedCondition, condition_label: cfg.label,
-      study: 'study3_crossing_zone'
+      study: 'study3_crossing_zone',
+      screen_w: window.screen ? window.screen.width : null,
+      screen_h: window.screen ? window.screen.height : null,
+      viewport_w: window.innerWidth, viewport_h: window.innerHeight,
+      max_touch_points: (navigator.maxTouchPoints || 0)
     });
   }
 });
