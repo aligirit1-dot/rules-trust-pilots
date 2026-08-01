@@ -386,9 +386,11 @@
        Side-by-side what-you-know vs what-the-partner-knows panel inserted at
        the top of the Balloon participant's own briefing. Spatially partitions
        the asymmetric-knowledge content so the participant does not have to
-       reconstruct it from prose alone. Mobile (≤720px) stacks vertically; the
-       Prolific filter is desktop-only so the stacked layout is the secondary
-       fallback for tablet-edge widths only.
+       reconstruct it from prose alone. Mobile (≤720px) stacks vertically. That
+       stacked layout is only a fallback for narrow desktop windows: phones and
+       tablets never reach this screen, because the desktop-only gate below
+       blocks them at load. Prolific itself does NOT filter by device — its
+       device tick boxes are display-only — so that gate is the only enforcement.
        Visual scheme:
          Self panel — light navy tint, navy bullets with check glyphs.
          Partner panel — neutral grey tint, grey bullets with cross glyphs
@@ -441,6 +443,13 @@
   </style>
 </head>
 <body></body>
+<noscript>
+  <div class="bz-mobile-block">
+    <h1>JavaScript required</h1>
+    <p>This study needs JavaScript enabled in your browser. Please enable it and reload this page, or open the study link on a desktop or laptop browser with JavaScript switched on.</p>
+    <p>If you cannot do that, please go back to the Prolific tab and click "Cancel participation" so the slot is released to someone else.</p>
+  </div>
+</noscript>
 <script>
 // =========================================================
 // DESKTOP-ONLY GATE (added 2026-05-05, iPad case added 2026-07-31)
@@ -467,7 +476,8 @@
       + '<div class="bz-mobile-block">'
       +   '<h1>Desktop or laptop required</h1>'
       +   '<p>This study uses a side-by-side layout and precise click timing that do not work reliably on phones or tablets.</p>'
-      +   '<p>Please return this submission on Prolific so the slot can be released to another participant. We will not be able to use data submitted from a phone or tablet.</p>'
+      +   '<p>If you have a desktop or laptop, you can open this same study link on that computer and carry on from the beginning.</p>'
+      +   '<p>If you cannot, please go back to the Prolific tab and click "Cancel participation" so the slot is released to someone else. Returning a study because of an incompatible device is not counted against you.</p>'
       + '</div>';
     throw new Error('study3_blocked_mobile_device');
   }
