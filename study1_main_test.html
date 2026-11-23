@@ -88,7 +88,7 @@ const SESSION_ID = urlParams.get('SESSION_ID') || 'PREVIEW';
 const ON_PROLIFIC = PROLIFIC_PID !== 'PREVIEW' || SESSION_ID !== 'PREVIEW' || STUDY_ID !== 'PREVIEW';
 const PROLIFIC_COMPLETION_URL = 'https://app.prolific.com/submissions/complete?cc=CAOLXQVO';
 
-// DataPipe (pipe.jspsych.org) -> Dataverse data deposit. Experiment ID set at
+// DataPipe (pipe.jspsych.org) data deposit (Google Drive experiment, set 23/11/2026; see log). Experiment ID set at
 // DataPipe registration; the save trial runs right before the end screen.
 const DATAPIPE_EXPERIMENT_ID = 'tYNWj578UvgH';
 const DATA_FILENAME = 'study1_' + PROLIFIC_PID + '_' +
@@ -115,8 +115,21 @@ const jsPsych = initJsPsych({
 // study1_vignettes.backup-before-five-vignette-rebuild-2026-09-26.html.
 const domains = ['food', 'toothache', 'motorbike', 'hotel', 'bus'];
 const conditions = ['norule', 'rule', 'rule_enforcement'];
-const assignedDomain = jsPsych.randomization.sampleWithoutReplacement(domains, 1)[0];
-const assignedCondition = jsPsych.randomization.sampleWithoutReplacement(conditions, 1)[0];
+// A participant who reloads the page keeps the vignette and arm they were
+// first given (23/11/2026): the draw is stored in this browser against their
+// Prolific ID (or session ID) and read back on reload. Without Prolific IDs
+// (a preview or a PI click-through) every load draws afresh.
+const ASSIGN_KEY = 's1_assign_' + (PROLIFIC_PID !== 'PREVIEW' ? PROLIFIC_PID : SESSION_ID);
+let storedAssign = null;
+if (ON_PROLIFIC) {
+  try { storedAssign = JSON.parse(window.localStorage.getItem(ASSIGN_KEY)); } catch (e) { storedAssign = null; }
+}
+const assignmentRestored = !!(storedAssign && domains.includes(storedAssign.d) && conditions.includes(storedAssign.c));
+const assignedDomain = assignmentRestored ? storedAssign.d : jsPsych.randomization.sampleWithoutReplacement(domains, 1)[0];
+const assignedCondition = assignmentRestored ? storedAssign.c : jsPsych.randomization.sampleWithoutReplacement(conditions, 1)[0];
+if (ON_PROLIFIC && !assignmentRestored) {
+  try { window.localStorage.setItem(ASSIGN_KEY, JSON.stringify({ d: assignedDomain, c: assignedCondition })); } catch (e) {}
+}
 
 // Actor phrases, fixed per vignette and identical across arms (DV document,
 // "Study 1 DVs September 16 2026 v2"). The bus one is neither the scenario's
@@ -219,6 +232,7 @@ timeline.push({
       session_id: SESSION_ID,
       assigned_domain: assignedDomain,
       assigned_condition: assignedCondition,
+      assignment_restored: assignmentRestored,
       study: 'study1_vignettes'
     });
   }
