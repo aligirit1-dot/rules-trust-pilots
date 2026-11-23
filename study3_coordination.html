@@ -12,7 +12,6 @@
   <script src="https://unpkg.com/@jspsych/plugin-survey-multi-choice@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-html-slider-response@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-call-function@1.1.3"></script>
-  <script src="https://unpkg.com/@jspsych-contrib/plugin-pipe@0.4"></script>
   <link href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css" rel="stylesheet">
   <style>
     .jspsych-content { max-width: 860px; font-size: 17px; line-height: 1.65; }
@@ -53,7 +52,7 @@
     .bz-size-wrap { width:140px; height:10px; background:#e5e7eb;
       border-radius:6px; overflow:hidden; display:inline-block;
       margin-left:10px; vertical-align:middle; }
-    .bz-size-bar { height:100%; background:#ef4444; border-radius:6px;
+    .bz-size-bar { height:100%; background:#94a3b8; border-radius:6px;  /* 27/09/2026: neutral grey until the warning window; was red from 0 s */
       transition:width .25s linear; width:0%; }
 
     /* ---- Scene ---- */
@@ -110,7 +109,7 @@
       display:flex; align-items:flex-start; justify-content:center; padding-top:18px; }
     .bz-road-strip.is-green { background:#22c55e; }
     .bz-road-strip.is-red   { background:#ef4444; }
-    .bz-road-strip-text { transform:rotate(180deg); font-weight:700; font-size:16px;
+    .bz-road-strip-text { transform:none; /* 27/09/2026: was rotate(180deg); the live label read upside down while the briefing thumbnail showed it upright */ font-weight:700; font-size:16px;
       letter-spacing:.5px; color:#f8fafc; text-align:center;
       white-space:nowrap; pointer-events:none; user-select:none;
       font-variant:all-small-caps; }
@@ -195,6 +194,13 @@
     .bz-btn-cross:disabled,
     .bz-btn-exit:disabled { opacity:.45; cursor:not-allowed; transform:none; }
     .bz-btn-exit { background:#6b7280; color:#fff; min-width:190px; }
+    .pay-table { border-collapse:collapse; margin:12px auto; font-size:15px; min-width:320px; }
+    .pay-table th, .pay-table td { border:1px solid #cbd5e1; padding:7px 14px; text-align:left; }
+    .pay-table th { background:#eef2ff; font-weight:600; }
+    .pay-table td.amt { text-align:right; font-weight:700; white-space:nowrap; }
+    .pay-box { background:#fefce8; border:2px solid #eab308; border-radius:10px; padding:14px 18px; margin:14px 0; }
+    .pay-box h4 { margin:0 0 6px; }
+    .bz-pay-strip { text-align:center; font-size:14.5px; color:#1e293b; background:#fefce8; border:1px solid #eab308; border-radius:8px; padding:8px 12px; margin:10px auto 0; max-width:620px; }
     .bz-btn-exit:hover { background:#4b5563; }
     .bz-btn-primary { background:#2563eb; color:#fff; }
     .bz-btn-primary:hover { background:#1d4ed8; }
@@ -504,13 +510,40 @@ const urlParams = new URLSearchParams(window.location.search);
 const PROLIFIC_PID = urlParams.get('PROLIFIC_PID') || 'PREVIEW';
 const STUDY_ID     = urlParams.get('STUDY_ID')     || 'PREVIEW';
 const SESSION_ID   = urlParams.get('SESSION_ID')   || 'PREVIEW';
+// On Prolific if ANY of the three IDs arrived (the August Study 1 pilot
+// arrived without PROLIFIC_PID, which skipped the completion redirect).
+const ON_PROLIFIC = PROLIFIC_PID !== 'PREVIEW' || SESSION_ID !== 'PREVIEW' || STUDY_ID !== 'PREVIEW';
 const FORCE_COND   = urlParams.get('cond');   // piloting override: ?cond=control|signal|rule|rule_fine
 const PROLIFIC_COMPLETION_URL = 'https://app.prolific.com/submissions/complete?cc=CIOOLCS8';
+// One Prolific completion code per task outcome (Ali, 27/09/2026). Each code
+// is set up in Prolific as a custom completion code that approves the
+// submission and awards that outcome's bonus automatically. This pays the
+// bonus whatever the participant answers at re-consent, WITHOUT keeping their
+// research data: if they decline, nothing is deposited, and the only record
+// of their outcome is which code Prolific received with their Prolific ID.
+// The three codes below are those of the CALIBRATION PILOT draft on Prolific
+// (study 6b0431c0e0cc3575aefb1a96, created 23/11/2026); the base code
+// CIOOLCS8 is that draft's default (manual review) path. Each outcome code
+// approves automatically; the bonus (GOAL = 9 tokens = £3.60, EXIT = 4 tokens
+// = £1.60, POP = 0) is then paid in Prolific by outcome label. The MAIN study
+// will get its own codes when it is created.
+const COMPLETION_CODES = {
+  safe:      'C133LD2E',
+  safe_exit: 'CGX5XSZT',
+  self_pop:  'CBDBP7MO'
+};
+function completionUrlForOutcome() {
+  const code = COMPLETION_CODES[window.S3_OUTCOME];
+  // No recorded outcome (should not happen after the task) -> base code,
+  // which is held for manual review in Prolific and paid the base plus the
+  // Goal bonus by default (protocol v10, 27/09/2026).
+  return code ? 'https://app.prolific.com/submissions/complete?cc=' + code : PROLIFIC_COMPLETION_URL;
+}
 
-// DataPipe (pipe.jspsych.org) -> OSF data deposit. Experiment ID set at
+// DataPipe (pipe.jspsych.org) -> Dataverse data deposit. Experiment ID set at
 // DataPipe registration; the save trial runs after re-consent, before the
 // final screen, and is skipped in focus-group mode (local download there).
-const DATAPIPE_EXPERIMENT_ID = 'r1gJ9OjODGRZ';
+const DATAPIPE_EXPERIMENT_ID = 'cOKwQCDD04Nm';
 const DATA_FILENAME = 'study3_' + PROLIFIC_PID + '_' + jsPsych_randomFileTag();
 function jsPsych_randomFileTag() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + '.csv';
@@ -563,8 +596,8 @@ const jsPsych = initJsPsych({
     });
     // Live (Prolific) runs redirect to completion URL; focus-group runs
     // stay on the final download screen rendered as the last timeline trial.
-    if (!FOCUS_GROUP && PROLIFIC_PID !== 'PREVIEW') {
-      window.location.href = PROLIFIC_COMPLETION_URL;
+    if (!FOCUS_GROUP && ON_PROLIFIC && !window.S3_NO_CONSENT) {
+      window.location.href = completionUrlForOutcome();
     }
   }
 });
@@ -665,8 +698,7 @@ const condConfig = {
     // ruleSummaryShort: live-trial reminder, kept brief so it doesn't compete
     // with the decision controls during the timed window. Full text lives in
     // the pre-trial briefing.
-    ruleSummaryShort: '',
-    partnerBriefing: 'You are playing a single run where you guide a dart along a rail to reach a dartboard at the end. You earn tokens for reaching the dartboard. You control the dart with a button: release it to move, hold it to pause.'
+    ruleSummaryShort: ''
   },
   signal: {
     label: 'Signal',
@@ -674,8 +706,7 @@ const condConfig = {
     hasRule: false,
     hasFine: false,
     ruleSummary: 'On the other participant\'s screen, the section of rail inside the crossing zone is shown in red. Their instructions don\'t mention this red section.',
-    ruleSummaryShort: 'Their rail has a red zone in the crossing area. Their instructions don\'t mention it.',
-    partnerBriefing: 'You are playing a single run where you guide a dart along a rail to reach a dartboard at the end. You earn tokens for reaching the dartboard. You control the dart with a button: release it to move, hold it to pause. There is a red zone on the rail.'
+    ruleSummaryShort: 'Their rail has a red zone in the crossing area. Their instructions don\'t mention it.'
   },
   rule: {
     label: 'Rule',
@@ -683,8 +714,7 @@ const condConfig = {
     hasRule: true,
     hasFine: false,
     ruleSummary: 'On the other participant\'s screen, the section of rail inside the crossing zone is shown in red, with <strong>Wait</strong> written on it. Their instructions tell them: <strong>the rule is to wait 10 seconds at the red section before continuing.</strong> Their instructions don\'t mention any consequence for ignoring this.',
-    ruleSummaryShort: 'Their rail: red zone marked <strong>Wait</strong>. Their instructions: the rule is to wait 10 seconds at the red section.',
-    partnerBriefing: 'You are playing a single run where you guide a dart along a rail to reach a dartboard at the end. You earn tokens for reaching the dartboard. You control the dart with a button: release it to move, hold it to pause. There is a red zone on the rail. The rule is to wait 10 seconds at the red zone before advancing.'
+    ruleSummaryShort: 'Their rail: red zone marked <strong>Wait</strong>. Their instructions: the rule is to wait 10 seconds at the red section.'
   },
   rule_fine: {
     label: 'Rule + Enforcement',
@@ -692,8 +722,7 @@ const condConfig = {
     hasRule: true,
     hasFine: true,
     ruleSummary: 'On the other participant\'s screen, the section of rail inside the crossing zone is shown in red, with <strong>Wait</strong> and <strong>−5</strong> written on it. Their instructions tell them: <strong>the rule is to wait 10 seconds at the red section before continuing. If they continue before the 10 seconds have passed, they lose 5 tokens.</strong>',
-    ruleSummaryShort: 'Their rail: red zone marked <strong>Wait −5</strong>. Their instructions: the rule is to wait 10 seconds, or lose 5 tokens.',
-    partnerBriefing: 'You are playing a single run where you guide a dart along a rail to reach a dartboard at the end. You earn tokens for reaching the dartboard. You control the dart with a button: release it to move, hold it to pause. There is a red zone on the rail. The rule is to wait 10 seconds at the red zone before advancing. If you advance before 10 seconds have passed, you lose 5 tokens from your earnings.'
+    ruleSummaryShort: 'Their rail: red zone marked <strong>Wait −5</strong>. Their instructions: the rule is to wait 10 seconds, or lose 5 tokens.'
   }
 };
 const cfg = condConfig[assignedCondition];
@@ -760,9 +789,22 @@ const BALLOON_MAX_PX      = 88;    // diameter at self-pop. Height of rendered S
                                    // 1.15 × diameter; at max this gives a 101 px tall
                                    // balloon that sits inside the 120 px tall start/goal
                                    // zones with ~9.5 px of vertical clearance each side.
-const CROSSING_PAYOFF     = 10;
-const SAFE_EXIT_PAYOFF    = 3;
+const CROSSING_PAYOFF     = 9;   // 27/09/2026: was 10 (pilot). See Reports/Study3_Bonus_Design_Research_2026-09-27.md
+const SAFE_EXIT_PAYOFF    = 4;   // 27/09/2026: was 3. Exit/Goal ≈ 0.44 so crossing no longer dominates at a ~50% belief
 const SELF_POP_PAYOFF     = 0;
+// Performance-dependent bonus (Ali, Aug 2026; amounts set by Ali 27/09/2026
+// from Reports/Study3_Bonus_Design_Research_2026-09-27.md): base pay £2.25
+// (keeps the approved protocol's £9/hr line true up to 15 min;
+// Prolific requires its £6/hr minimum from the base alone), plus a real bonus
+// by outcome: Goal 9 tokens = £3.60, Safe exit 4 tokens = £1.60, pop 0.
+// Paid through Prolific via one completion code per outcome (see
+// COMPLETION_CODES). Participants see amounts converted on Prolific.
+const TOKEN_VALUE_GBP     = 0.40;
+const BASE_PAY_GBP        = 2.25;   // 27/09/2026: was 1.80; £9/hr at the 15-minute top of the stated 10–15 minutes
+function gbp(x) { return '£' + x.toFixed(2); }
+function tokensToGBP(t) { return gbp(t * TOKEN_VALUE_GBP); }
+function totalGBP(t) { return gbp(BASE_PAY_GBP + t * TOKEN_VALUE_GBP); }
+const MAX_BONUS_GBP       = tokensToGBP(CROSSING_PAYOFF);
 // Fraction of the trial window during which the size bar shifts toward
 // warning colour (amber → red). Graded salience cue to reduce accidental
 // self-pops without disclosing the exact deadline. Traffic-light colour
@@ -1073,20 +1115,33 @@ timeline.push({
   stimulus: `
     <div class="consent-box">
       <h2 style="text-align:center;">Participant Information</h2>
+      <p style="text-align:center; font-style:italic; color:#475569; margin-bottom:12px;">Study title: <strong>Decision-making in a short interactive task</strong></p>
+      <p><strong>Ethics Reference:</strong> IRB-25-0482 (UCLA)</p>
       <h3>What is this study about?</h3>
-      <p>This study is part of a research programme investigating how people make decisions in short interactive tasks. You will be asked some brief questions about yourself and your general attitudes, and you will then complete a short interactive task on screen, followed by some follow-up questions.</p>
+      <p>This study is part of a research project investigating how people make decisions in short interactive tasks.</p>
       <h3>What will I do?</h3>
-      <p>You will complete one online session (approximately 10–15 minutes) involving brief demographic and attitude questions, a short on-screen task, and some follow-up questions.</p>
-      <p>You will not be fully informed about the nature of the study before your participation, but you will be debriefed following your participation in the research.</p>
-      <h3>Participation</h3>
-      <p>Voluntary. You may withdraw at any time by closing your browser. There is a two-week withdrawal window via Prolific.</p>
+      <p>You will complete one online session (approximately 10–15 minutes): a few questions about yourself, a short on-screen task, and further questions afterwards. The task needs a desktop or laptop computer; it does not work on phones or tablets.</p>
+      <p>Some details of the study are withheld until the end, and some of what you are told during the task may not be accurate. You will be told everything at the debriefing.</p>
+      <h3>Do I have to take part?</h3>
+      <p>You must be 18 or over to take part. Participation is voluntary. You can withdraw at any time by closing your browser. You have two weeks after completion to withdraw your data by contacting the researcher via Prolific using your Prolific ID. If you stop part-way, message us through Prolific and we will pay you for the time you spent.</p>
       <h3>Who is running this?</h3>
-      <p><strong>Ethics Reference:</strong> IRB-25-0482 (UCLA)<br>
-      <strong>Principal Investigator:</strong> Professor Daniel Fessler, UCLA (dfessler@anthro.ucla.edu)<br>
-      <strong>Lead Researcher and Primary Contact:</strong> Ali Giritlioğlu, Nottingham Trent University (ali.giritlioglu@ntu.ac.uk)<br>
-      <strong>Co-Investigator:</strong> Dr Tom Kupfer, NTU (tom.kupfer@ntu.ac.uk)</p>
+      <p><strong>Principal Investigator:</strong> Professor Daniel Fessler, UCLA Department of Anthropology (dfessler@anthro.ucla.edu)<br>
+      <strong>Lead Researcher and Primary Contact:</strong> Ali Giritlioğlu, Nottingham Trent University, UK (ali.giritlioglu@ntu.ac.uk)<br>
+      <strong>Co-Investigator:</strong> Dr Tom Kupfer, Nottingham Trent University, UK (tom.kupfer@ntu.ac.uk)<br>
+      <strong>Funding:</strong> U.S. Air Force Office of Scientific Research (AFOSR)</p>
       <h3>Compensation</h3>
-      <p>£2.50 for approximately 15 minutes.</p>
+      <p>You will be paid <strong>${gbp(BASE_PAY_GBP)}</strong> for taking part, <strong>plus a bonus</strong> that depends on how a short on-screen task turns out:</p>
+      <table class="pay-table">
+        <tr><th>Task outcome</th><th>Bonus</th><th>Your total</th></tr>
+        <tr><td>Best outcome</td><td class="amt">${tokensToGBP(CROSSING_PAYOFF)}</td><td class="amt">${totalGBP(CROSSING_PAYOFF)}</td></tr>
+        <tr><td>Middle outcome</td><td class="amt">${tokensToGBP(SAFE_EXIT_PAYOFF)}</td><td class="amt">${totalGBP(SAFE_EXIT_PAYOFF)}</td></tr>
+        <tr><td>Worst outcome</td><td class="amt">${tokensToGBP(SELF_POP_PAYOFF)}</td><td class="amt">${gbp(BASE_PAY_GBP)}</td></tr>
+      </table>
+      <p>The task explains how each outcome is decided before you start. All amounts are paid through Prolific, and Prolific shows them in your local currency.</p>
+      <h3>Confidentiality and Data Protection</h3>
+      <p>Your data are stored securely. We do not collect your name or contact details. The only identifier we collect is your Prolific ID, which is deleted after the two-week withdrawal window; after that we can no longer link your responses to you, apart from the completion code Prolific holds, which records only which bonus you were paid. Anonymised data are shared publicly online, in Harvard Dataverse or a similar research archive, under a CC BY-NC-SA licence. Your data are handled in accordance with UK data protection law (UK GDPR and the Data Protection Act 2018), regardless of your country of residence.</p>
+      <h3>Risks, benefits and your rights</h3>
+      <p>Taking part involves no risks beyond those of everyday life; some people find the explanation given at the end of the study surprising. The bonus depends on how the task turns out, so you may earn no bonus; the £2.25 is paid whatever happens. There is no direct benefit to you; your responses contribute to research on decision-making. If you have questions about your rights as a research participant, you may contact the UCLA Office of the Human Research Protection Program by phone (+1 310 206 2040) or by email (participants@research.ucla.edu).</p>
     </div>
   `,
   choices: ['Continue to consent form']
@@ -1097,13 +1152,23 @@ timeline.push({
   stimulus: `
     <div class="consent-box">
       <h2 style="text-align:center;">Consent Form</h2>
-      <p>By clicking "I consent" below, you confirm that you have read the information sheet, understand participation is voluntary, and agree to your anonymised data being shared.</p>
+      <p>Version 5, dated 27 September 2026</p>
+      <p>By clicking "I consent" below, you confirm that:</p>
+      <ul style="text-align:left;">
+        <li>You have read and understood the information sheet and have had the opportunity to ask questions.</li>
+        <li>You understand participation is voluntary and you can withdraw your data up to two weeks after participation.</li>
+        <li>You understand anonymised data will be publicly shared under a Creative Commons BY-NC-SA licence.</li>
+        <li>You understand outputs may be published, presented, or shared with collaborators and funders.</li>
+        <li>You understand this research is supported by the U.S. Department of Defense (AFOSR).</li>
+        <li>You understand that you will not be told the full purpose of the study, and may be given inaccurate information about it, until the end.</li>
+      </ul>
     </div>
   `,
   choices: ['I consent to participate', 'I do not consent'],
   on_finish: function(data) {
     if (data.response === 1) {
-      jsPsych.endExperiment('<p style="text-align:center;font-size:18px;">You have chosen not to consent. Thank you.</p>');
+      window.S3_NO_CONSENT = true;   // 27/09/2026: stops on_finish redirecting a non-consenter to Prolific as complete
+      jsPsych.endExperiment('<p style="text-align:center;font-size:18px;">You have chosen not to consent. Thank you.<br>Please go back to Prolific and return the submission so the slot is released.</p>');
     }
   }
 });
@@ -1212,8 +1277,8 @@ timeline.push({
 // having no knowledge that the Balloon participant exists, so there is no
 // agentive choice against the Balloon to feel betrayed by. Including
 // betrayal aversion would either produce uninterpretable nulls or imply
-// the participant failed to internalise the asymmetry (which is what the
-// forced-correct comprehension check already gates).
+// the participant failed to internalise the asymmetry (which the
+// comprehension check and its feedback screen address).
 
 // ---- 3. STUDY INTRO → MATCHING → DART RUN INTRODUCTION ----
 // The participant enters the Balloon task. They are told up front that this
@@ -1244,7 +1309,7 @@ timeline.push({
   stimulus: `
     <div id="bz-root"><div class="bz-panel" style="text-align:center; padding:40px 0;">
       <h2>Ready to begin?</h2>
-      <p style="color:#64748b; font-size:16px; max-width:520px; margin:0 auto 24px;">On the next screens we'll walk you through the task you'll be doing, and through what the other participant will be doing on their side. You'll be paired with a Dart Run participant just before your task begins.</p>
+      <p style="color:#64748b; font-size:16px; max-width:520px; margin:0 auto 24px;">On the next screens we'll walk you through the task you'll be doing, and through what the other participant will be doing on their side. You and the Dart Run participant will start your tasks at the same time.</p>
     </div></div>
   `,
   choices: ['Continue'],
@@ -1308,7 +1373,7 @@ timeline.push({
 
         <div class="bz-brief-section">
           <h4>Their tokens</h4>
-          <p><strong>+10 tokens</strong> if they hit the dartboard.</p>
+          <p><strong>+${CROSSING_PAYOFF} tokens</strong> if they hit the dartboard.</p>
         </div>
 
         <div class="bz-brief-section" style="margin-top:18px;">
@@ -1481,9 +1546,9 @@ timeline.push({
 // -------- Demo 1: waiting too long → overinflation pop --------
 // Plain (uncoloured) zone; no rule marker, no condition-specific content.
 // Balloon-alone scene: the balloon stays at the start, inflates smoothly,
-// and pops. The probabilistic framing ("bigger balloon, higher chance of
-// popping") keeps the pedagogy intuitive without telegraphing the exact
-// 12 s deadline used in the live task. No dart in this illustration —
+// and pops. The caption says only that the balloon will pop at an unknown
+// maximum size (27/09/2026: it used to imply a rising probability, which the
+// fixed 12 s deadline never had), without telegraphing the exact deadline. No dart in this illustration —
 // overinflation is a balloon-alone mechanic.
 timeline.push({
   type: jsPsychHtmlButtonResponse,
@@ -1526,7 +1591,7 @@ timeline.push({
       balloonEl.style.left = DEMO_START_X + 'px';
       setBalloonSize(balloonEl, BALLOON_BASE_PX);
       void balloonEl.offsetWidth;
-      capEl.innerHTML = '<strong>There is a possibility that the balloon may pop.</strong> Your balloon keeps inflating throughout the trial, and the bigger it gets, the more likely it is to pop. If it pops before you cross, you lose everything (0 tokens). This illustration shows the balloon staying at the start and inflating until it pops.';
+      capEl.innerHTML = '<strong>Your balloon can pop on its own.</strong> It keeps inflating throughout the trial, and you don\'t know when it will reach its maximum size and pop. If it pops before you act, you get 0 tokens (no bonus). This illustration shows the balloon staying at the start and inflating until it pops.';
       ctrlEl.innerHTML = '<button id="demo1-play" class="bz-btn bz-btn-primary">Play illustration</button>';
       document.getElementById('demo1-play').addEventListener('click', play);
     }
@@ -1785,17 +1850,21 @@ timeline.push({
             <h4>Your two buttons</h4>
             <ul>
               <li><strong>Cross</strong> — starts your cross. <strong>No going back.</strong></li>
-              <li><strong>Safe exit</strong> — ends the trial now with <strong>3 tokens</strong>. Only works if you haven't clicked Cross yet.</li>
+              <li><strong>Safe exit</strong> — ends the trial now with <strong>${SAFE_EXIT_PAYOFF} tokens</strong>. Only works if you haven't clicked Cross yet.</li>
             </ul>
           </div>
 
           <div class="bz-brief-section">
-            <h4>Tokens</h4>
-            <ul>
-              <li><strong>+10</strong> if you reach Goal.</li>
-              <li><strong>+3</strong> if you take Safe exit.</li>
-              <li><strong>0</strong> if your balloon pops.</li>
-            </ul>
+            <div class="pay-box">
+            <h4>Tokens are real money</h4>
+            <p>Each token is worth <strong>${tokensToGBP(1)}</strong>, paid as a bonus through Prolific on top of your <strong>${gbp(BASE_PAY_GBP)}</strong>.</p>
+            <table class="pay-table">
+              <tr><th>What happens</th><th>Tokens</th><th>Bonus</th><th>Your total</th></tr>
+              <tr><td>You reach Goal</td><td class="amt">${CROSSING_PAYOFF}</td><td class="amt">${tokensToGBP(CROSSING_PAYOFF)}</td><td class="amt">${totalGBP(CROSSING_PAYOFF)}</td></tr>
+              <tr><td>You take Safe exit</td><td class="amt">${SAFE_EXIT_PAYOFF}</td><td class="amt">${tokensToGBP(SAFE_EXIT_PAYOFF)}</td><td class="amt">${totalGBP(SAFE_EXIT_PAYOFF)}</td></tr>
+              <tr><td>Your balloon pops</td><td class="amt">${SELF_POP_PAYOFF}</td><td class="amt">${tokensToGBP(SELF_POP_PAYOFF)}</td><td class="amt">${gbp(BASE_PAY_GBP)}</td></tr>
+            </table>
+            </div>
           </div>
 
           <div class="bz-brief-section">
@@ -1828,8 +1897,11 @@ timeline.push({
 
 // ---- 4. COMPREHENSION CHECK ----
 // The asymmetry item is kept first and is the load-bearing theory-of-mind
-// check. If any item is answered incorrectly, a feedback screen presents
-// the correct content and the comprehension block is forced to retry.
+// check. If any item is answered incorrectly, one feedback screen presents
+// the correct content and the participant continues (no retry loop; the
+// wrong answers are recorded for exclusion analyses). Comment corrected
+// 27/09/2026: an earlier comment said "forced to retry", which the code
+// never did.
 timeline.push({
   type: jsPsychSurveyMultiChoice,
   preamble: '<h2 style="text-align:center; font-size:24px;">A few quick checks</h2><p style="text-align:center; color:#475569; font-size:16px; max-width:560px; margin:0 auto 22px; line-height:1.6;">While the other participant finishes preparing, please confirm you understood the task.</p>',
@@ -1846,8 +1918,8 @@ timeline.push({
     {
       prompt: 'What happens if the dart is in the crossing zone at the same time as your balloon?',
       options: [
-        'We both lose everything',
-        'The dart pierces my balloon and I lose everything; the dart is unaffected',
+        'We both get no bonus',
+        'The dart pierces my balloon and I get no bonus; the dart is unaffected',
         'Nothing happens — the zone is shared'
       ],
       required: true, name: 'comp_collision'
@@ -1855,7 +1927,7 @@ timeline.push({
     {
       prompt: 'What happens if your balloon reaches maximum size before you act?',
       options: [
-        'It pops and I lose everything',
+        'It pops and I get no bonus',
         'It stays at maximum size until I decide',
         'It deflates automatically'
       ],
@@ -1875,8 +1947,8 @@ timeline.push({
   on_finish: function(data) {
     const r = data.response;
     data.comp_asymmetry_correct = (r.comp_asymmetry === 'Nothing — their briefing covered only the Dart Run task');
-    data.comp_collision_correct = (r.comp_collision === 'The dart pierces my balloon and I lose everything; the dart is unaffected');
-    data.comp_selfpop_correct   = (r.comp_selfpop === 'It pops and I lose everything');
+    data.comp_collision_correct = (r.comp_collision === 'The dart pierces my balloon and I get no bonus; the dart is unaffected');
+    data.comp_selfpop_correct   = (r.comp_selfpop === 'It pops and I get no bonus');
     data.comp_invisible_correct = (r.comp_invisible === 'No, the dart is not shown during the task');
     data.comp_all_correct = data.comp_asymmetry_correct && data.comp_collision_correct
                          && data.comp_selfpop_correct && data.comp_invisible_correct;
@@ -1891,8 +1963,8 @@ timeline.push({
       const last = jsPsych.data.get().filter({phase:'comprehension'}).last(1).values()[0];
       let f = '<h2 style="text-align:center;">Some answers were incorrect</h2><p>Here are the correct points:</p><ul style="text-align:left; max-width:620px; margin:0 auto;">';
       if (!last.comp_asymmetry_correct) f += '<li>The Dart Run participant\'s briefing <strong>covered only the Dart Run task.</strong> It did not mention this Balloon study or any other participant.</li>';
-      if (!last.comp_collision_correct) f += '<li>If the dart is in the zone while your balloon is there, the dart <strong>pierces your balloon and you lose everything.</strong> The dart is unaffected.</li>';
-      if (!last.comp_selfpop_correct)   f += '<li>If your balloon reaches its maximum size before you act, <strong>it pops and you lose everything.</strong></li>';
+      if (!last.comp_collision_correct) f += '<li>If the dart is in the zone while your balloon is there, the dart <strong>pierces your balloon and you get no bonus.</strong> The dart is unaffected.</li>';
+      if (!last.comp_selfpop_correct)   f += '<li>If your balloon reaches its maximum size before you act, <strong>it pops and you get no bonus.</strong></li>';
       if (!last.comp_invisible_correct) f += '<li>The dart is <strong>not shown during the task.</strong> You cannot see it moving along its rail.</li>';
       f += '</ul>';
       return f;
@@ -2103,9 +2175,10 @@ timeline.push({
         <div id="bz-balloon" class="bz-balloon" style="left:${START_CENTER_X}px; top:${ZONE_CENTER_Y}px;"></div>
       </div>
       <div class="bz-controls">
-        <button id="bz-cross" class="bz-btn bz-btn-cross">Cross</button>
-        <button id="bz-exit"  class="bz-btn bz-btn-exit">Safe exit (${SAFE_EXIT_PAYOFF} tokens)</button>
+        <button id="bz-cross" class="bz-btn bz-btn-cross">Cross (${tokensToGBP(CROSSING_PAYOFF)} bonus if you reach Goal)</button>
+        <button id="bz-exit"  class="bz-btn bz-btn-exit">Safe exit (${tokensToGBP(SAFE_EXIT_PAYOFF)} bonus)</button>
       </div>
+      <div class="bz-pay-strip">Reach Goal: <strong>${tokensToGBP(CROSSING_PAYOFF)}</strong> bonus &nbsp;·&nbsp; Safe exit: <strong>${tokensToGBP(SAFE_EXIT_PAYOFF)}</strong> bonus &nbsp;·&nbsp; Balloon pops: <strong>${tokensToGBP(SELF_POP_PAYOFF)}</strong> bonus</div>
       <div id="bz-status" class="bz-status">&nbsp;</div>
     `;
 
@@ -2181,7 +2254,7 @@ timeline.push({
 
       crossBtn.disabled = true; exitBtn.disabled = true;
       crossBtn.textContent = 'Committed — crossing';
-      statusEl.innerHTML = '<strong>Crossing the zone.</strong> Once started, the cross cannot be stopped or reversed.';
+      statusEl.innerHTML = '<strong>Crossing the zone.</strong> Once started, the crossing cannot be stopped or reversed.';
 
       balloonEl.style.transition = 'left ' + CROSSING_DURATION + 's ease-in-out, width .2s linear, height .2s linear';
       requestAnimationFrame(function() { balloonEl.style.left = GOAL_CENTER_X + 'px'; });
@@ -2205,6 +2278,7 @@ timeline.push({
       if (done) return;
       done = true;
       cancelAnimationFrame(rafId);
+      window.S3_OUTCOME = outcome;
 
       const tEnd = currentSec();
       gameData = {
@@ -2218,6 +2292,7 @@ timeline.push({
         trial_end_sec: tEnd,
         balloon_size_at_cross_px: crossStartSec >= 0 ? Math.round(balloonSizeAt(crossStartSec)) : null,
         final_payout: payout,
+        bonus_gbp: +(payout * TOKEN_VALUE_GBP).toFixed(2),
         self_pop_deadline_sec: SELF_POP_SEC,
         crossing_duration_sec: CROSSING_DURATION
       };
@@ -2229,13 +2304,13 @@ timeline.push({
     function showResult(outcome, payout) {
       let msg = '', cls = '';
       if (outcome === 'safe') {
-        msg = 'Your balloon reached the goal.<br>You earned <strong>' + payout + ' tokens</strong>.';
+        msg = 'Your balloon reached the goal.<br>You earned <strong>' + payout + ' tokens</strong>, a bonus of <strong>' + tokensToGBP(payout) + '</strong>.<br>Your total for this study: <strong>' + totalGBP(payout) + '</strong>.';
         cls = 'bz-outcome-safe';
       } else if (outcome === 'self_pop') {
-        msg = 'Your balloon reached its maximum size before you acted.<br><strong>It popped on its own.</strong><br>You earned <strong>0 tokens</strong>.';
+        msg = 'Your balloon reached its maximum size before you acted.<br><strong>It popped on its own.</strong><br>You earned <strong>0 tokens</strong>, so no bonus this time.<br>Your total for this study: <strong>' + gbp(BASE_PAY_GBP) + '</strong>.';
         cls = 'bz-outcome-pop';
       } else if (outcome === 'safe_exit') {
-        msg = 'You took the safe exit.<br>You earned <strong>' + payout + ' tokens</strong>.';
+        msg = 'You took the safe exit.<br>You earned <strong>' + payout + ' tokens</strong>, a bonus of <strong>' + tokensToGBP(payout) + '</strong>.<br>Your total for this study: <strong>' + totalGBP(payout) + '</strong>.';
         cls = 'bz-outcome-exit';
       }
       gameEl.innerHTML = '<h2 style="text-align:center;">Result</h2>' +
@@ -2285,9 +2360,9 @@ timeline.push({
 // item; Johnson & Mislin (2011, JEBO meta-analysis of trust-game studies).
 timeline.push({
   type: jsPsychSurveyLikert,
-  preamble: '<h2 style="text-align:center;">About Your Decision</h2>',
+  preamble: '<h2 style="text-align:center;">About Your Decision</h2><p style="text-align:center; color:#475569; font-size:15px;">Please answer whether or not you chose to cross.</p>',
   questions: [{
-    prompt: 'Thinking back to the task, how much did you trust that the other participant would not be in the crossing zone while you were crossing?',
+    prompt: 'Thinking back to the task, how much did you trust the other participant to stay out of the crossing zone while your balloon crossed (or would have crossed) it?',
     labels: ['1<br><span class="scale-label">Not at all</span>','2','3','4','5','6','7<br><span class="scale-label">Completely</span>'],
     required: true, name: 'trust_in_partner'
   }],
@@ -2309,7 +2384,7 @@ timeline.push({
 // vulnerability and risk perception be distinguished at analysis.
 timeline.push({
   type: jsPsychSurveyLikert,
-  preamble: '<h2 style="text-align:center;">About the Task</h2>',
+  preamble: '<h2 style="text-align:center;">About the Task</h2><p style="text-align:center; color:#475569; font-size:15px;">Please answer whether or not you chose to cross.</p>',
   questions: [
     {
       prompt: 'How vulnerable did you feel while considering whether and when to cross?',
@@ -2317,7 +2392,7 @@ timeline.push({
       required: true, name: 'felt_vulnerability'
     },
     {
-      prompt: 'How risky did crossing the zone feel?',
+      prompt: 'How risky did crossing the zone seem to you?',
       labels: ['1<br><span class="scale-label">Not at all risky</span>','2','3','4','5','6','7<br><span class="scale-label">Extremely risky</span>'],
       required: true, name: 'felt_risk'
     }
@@ -2426,8 +2501,10 @@ timeline.push({
     // perceived_constraint to perceived_freedom; analysis code that needs
     // a constraint score should compute (8 - perceived_freedom). Pre-reg
     // deviation: flagged in the change log.
-    labels: ['1<br><span class="scale-label">No freedom at all</span>','2','3',
-             '4<br><span class="scale-label">Moderate freedom</span>','5','6',
+    // 27/09/2026: anchors aligned with Study 1 (1/3/5/7 labelled).
+    labels: ['1<br><span class="scale-label">No freedom at all</span>','2',
+             '3<br><span class="scale-label">Limited freedom</span>','4',
+             '5<br><span class="scale-label">Moderate freedom</span>','6',
              '7<br><span class="scale-label">Complete freedom</span>'],
     required: true, name: 'perceived_freedom'
   }],
@@ -2482,7 +2559,7 @@ timeline.push({
   type: jsPsychHtmlSliderResponse,
   stimulus: `
     <h2 style="text-align:center;">Expectations &mdash; what people do</h2>
-    <p style="text-align:center;">Out of 100 Dart Run participants, how many do you think would have their dart inside the crossing zone at the moment you crossed?</p>
+    <p style="text-align:center;">Out of 100 Dart Run participants, how many do you think would have their dart inside the crossing zone at the moment you crossed (or would have crossed)?</p>
     <div class="slider-labels"><span>0 of 100</span><span>50 of 100</span><span>100 of 100</span></div>
   `,
   labels: ['0','50','100'], min:0, max:100, slider_start:50, step:1,
@@ -2659,7 +2736,7 @@ timeline.push({
       <h2 style="text-align:center; margin:0 0 12px;">A short allocation task</h2>
       <p style="color:#334155; font-size:15px; line-height:1.55;">On the next few screens, imagine you have been given <strong>£100</strong> that you must give away to two other people. You cannot keep any of it for yourself.</p>
       <p style="color:#334155; font-size:15px; line-height:1.55;">For each pair of recipients, please move the slider to show how you would split the £100 between them. Assume both recipients have the same standard of living and neither will learn who sent the money.</p>
-      <p style="color:#374151; font-size:15px; margin-top:10px;">These decisions are <em>hypothetical</em> &mdash; no money is actually being sent.</p>
+      <p style="color:#374151; font-size:15px; margin-top:10px;">These decisions are <em>hypothetical</em> &mdash; no money is being sent.</p>
     </div></div>
   `,
   choices: ['Continue'],
@@ -2667,8 +2744,8 @@ timeline.push({
 });
 
 const uniItems = [
-  { left: 'A member of your immediate family', right: 'A randomly-chosen person from your country',        name: 'uni_family_compatriot' },
-  { left: 'A randomly-chosen person from your country', right: 'A randomly-chosen person from another country', name: 'uni_compatriot_foreigner' },
+  { left: 'A member of your immediate family', right: 'A randomly chosen person from your country',        name: 'uni_family_compatriot' },
+  { left: 'A randomly chosen person from your country', right: 'A randomly chosen person from another country', name: 'uni_compatriot_foreigner' },
   { left: 'Someone who shares your religious or spiritual views', right: 'Someone whose religious or spiritual views are very different from yours', name: 'uni_religion' },
   { left: 'Someone who shares your political views',   right: 'Someone whose political views are very different from yours', name: 'uni_politics' }
 ];
@@ -2682,7 +2759,7 @@ uniItems.forEach(function(it) {
         <span style="flex:1; text-align:right;"><strong>${it.right}</strong></span>
       </div>
       <div class="slider-labels" style="max-width:640px; margin:0 auto;"><span>£100 / £0</span><span>£50 / £50</span><span>£0 / £100</span></div>
-      <p style="text-align:center; font-size:12px; color:#64748b; margin-top:8px;">If your answer is exactly £50 / £50, please tap the slider once to register it.</p>
+      <p style="text-align:center; font-size:12px; color:#64748b; margin-top:8px;">If your answer is exactly £50 / £50, please click or tap the slider once to register it.</p>
     `,
     labels: ['£100 / £0','£50 / £50','£0 / £100'],
     min: 0, max: 100, slider_start: 50, step: 1,
@@ -2781,19 +2858,108 @@ timeline.push({
 timeline.push({
   type: jsPsychSurveyText,
   preamble: '<h2 style="text-align:center;">Demographics</h2>',
-  questions: [{ prompt: 'What is your age?', required: true, name: 'age', placeholder: '18–100' }],
-  data: { measure: 'demographics_age' }
+  questions: [{ prompt: 'What is your age?', required: true, name: 'age', placeholder: 'Age in years' }],
+  data: { measure: 'demographics_age' },
+  // 27/09/2026: numeric field with the same bounds as Study 1 (13–100; the
+  // under-18 floor is a data-quality check per Dan Fessler, 18 Aug 2026).
+  on_load: function() {
+    const ageInput = document.querySelector('input[data-name="age"]');
+    ageInput.type = 'number'; ageInput.min = '13'; ageInput.max = '100'; ageInput.step = '1';
+  }
 });
 
 timeline.push({
   type: jsPsychSurveyMultiChoice,
   questions: [
     { prompt: 'What is your gender?', options: ['Male','Female','Non-binary','Prefer not to say','Prefer to self-describe'], required: true, name: 'gender' },
-    { prompt: 'Highest level of education completed?', options: ['No formal qualifications','GCSE/O-Level or equivalent','A-Level or equivalent','Bachelor\'s degree','Master\'s degree','Doctoral degree','Other professional qualification'], required: true, name: 'education' },
-    { prompt: 'Current employment status?', options: ['Employed full-time','Employed part-time','Self-employed','Unemployed','Student','Retired','Other'], required: true, name: 'employment' }
+    { prompt: 'What is your current employment status?', options: ['Employed full-time','Employed part-time','Self-employed','Unemployed','Student','Retired','Other'], required: true, name: 'employment' }
   ],
   data: { measure: 'demographics_main' }
 });
+
+// Country of residence — asked before education so the education question can
+// branch to country-specific qualification lists (Fessler email 18 Aug 2026; ported from Study 1, 26 Sep 2026).
+// Mains recruit UK/US/Canada/Australia/NZ; 'Other' is a safety net and should
+// be rare if the Prolific residence screener is set.
+timeline.push({
+  type: jsPsychSurveyMultiChoice,
+  questions: [{
+    prompt: 'In which country do you currently live?',
+    options: ['United Kingdom', 'United States', 'Canada', 'Australia', 'New Zealand', 'Other'],
+    required: true, name: 'country_of_residence'
+  }],
+  data: { measure: 'demographics_country' }
+});
+
+
+// Education, branched on country of residence — same conditional-timeline
+// pattern as the children questions below. Each participant sees exactly one
+// branch; the response variable is `education` in every branch, so the data
+// keep a single education column. NOTE for analysis code: `education` now
+// arrives in its own trial row (measure: 'demographics_education'), no longer
+// inside the demographics_main row.
+//
+// Category sources: UK list unchanged from the previous version; US per
+// Census Bureau attainment categories; Canada per Statistics Canada highest
+// certificate (condensed); Australia per ABS/AQF; New Zealand per NZQF.
+//
+// ORDINAL MAPPING for cross-country analysis (edu_ord, ISCED-2011 bands;
+// apply at analysis time, not collected at runtime):
+//   1 below upper secondary . UK: No formal qualifications; GCSE/O-Level.
+//     US: Less than high school. CA: No certificate/diploma/degree.
+//     AU: Less than Year 12. NZ: No formal qualification.
+//   2 upper secondary ....... UK: A-Level. US: High school diploma or GED.
+//     CA: High school diploma. AU: Year 12. NZ: Secondary school (NCEA).
+//   3 post-secondary below bachelor's ... US: Some college; Associate.
+//     CA: Trades cert; College/CEGEP diploma. AU: Certificate I–IV;
+//     Diploma/Advanced Diploma. NZ: Certificate/diploma below bachelor's.
+//     UK: (no option at this band).
+//   4 bachelor's ............ all: Bachelor's; AU: Grad Cert/Diploma and
+//     NZ: PG cert/dip or Honours sit AQF/NZQF 8 — banded 4, defensibly 5.
+//   5 master's .............. all: Master's; US/CA: Professional degree.
+//   6 doctoral .............. all: Doctoral degree.
+//   NA/hand-code ............ UK: Other professional qualification; all
+//     'Other'-country options.
+const educationOptionsByCountry = {
+  'United Kingdom': ['No formal qualifications', 'GCSE/O-Level or equivalent', 'A-Level or equivalent',
+                     'Bachelor\'s degree', 'Master\'s degree', 'Doctoral degree', 'Other professional qualification'],
+  'United States':  ['Less than high school', 'High school diploma or GED', 'Some college, no degree',
+                     'Associate degree', 'Bachelor\'s degree', 'Master\'s degree',
+                     'Professional degree (e.g. MD, JD)', 'Doctoral degree'],
+  'Canada':         ['No certificate, diploma or degree', 'High school diploma or equivalent',
+                     'Trades certificate or apprenticeship', 'College, CEGEP or other non-university diploma',
+                     'Bachelor\'s degree', 'Master\'s degree', 'Professional degree (e.g. medicine, law)',
+                     'Doctoral degree'],
+  'Australia':      ['Less than Year 12', 'Year 12 or equivalent', 'Certificate I–IV (including trade certificate)',
+                     'Diploma or Advanced Diploma', 'Bachelor\'s degree', 'Graduate Certificate or Graduate Diploma',
+                     'Master\'s degree', 'Doctoral degree'],
+  'New Zealand':    ['No formal qualification', 'Secondary school qualification (e.g. NCEA)',
+                     'Certificate or diploma below bachelor\'s level', 'Bachelor\'s degree',
+                     'Postgraduate certificate or diploma, or Bachelor\'s with honours',
+                     'Master\'s degree', 'Doctoral degree'],
+  'Other':          ['Primary education or less', 'Secondary education',
+                     'Vocational or technical qualification', 'Bachelor\'s degree or equivalent',
+                     'Master\'s degree or equivalent', 'Doctoral degree or equivalent']
+};
+
+Object.keys(educationOptionsByCountry).forEach(function(country) {
+  timeline.push({
+    timeline: [{
+      type: jsPsychSurveyMultiChoice,
+      questions: [{
+        prompt: 'What is the highest level of education you have completed?',
+        options: educationOptionsByCountry[country],
+        required: true, name: 'education'
+      }],
+      data: { measure: 'demographics_education' }
+    }],
+    conditional_function: function() {
+      const countryTrial = jsPsych.data.get().filter({measure: 'demographics_country'}).last(1).values()[0];
+      return countryTrial && countryTrial.response && countryTrial.response.country_of_residence === country;
+    }
+  });
+});
+
 
 // ---- Cognitive Reflection Test (CRT-2) ----
 // Thomson & Oppenheimer (2016). Four-item alternative to the original
@@ -2833,29 +2999,69 @@ timeline.push({
     <div class="debrief-box">
       <h2 style="text-align:center;">Thank you for participating</h2>
       <h3>What was this study about?</h3>
-      <p>This experiment investigates how <strong>rules</strong> and <strong>enforcement mechanisms</strong> shape trust in situations where your outcome depends on another person's behaviour, but you cannot see them, predict them individually, or rely on them sharing your interests. We varied whether the other participant's behaviour was constrained by nothing, by a colour signal, by a rule attached to that signal, or by a rule plus a penalty. We measured how this affected your willingness to cross the zone and your reported trust in the other participant.</p>
+      <p>This experiment investigates how <strong>rules</strong> and <strong>enforcement mechanisms</strong> shape trust when your outcome depends on someone you cannot see and whose interests may differ from yours. We varied whether the other participant's behaviour was constrained by nothing, by a colour signal, by a rule attached to that signal, or by a rule plus a penalty. We measured how this affected your willingness to cross the zone and your reported trust in the other participant.</p>
       <h3>Important disclosure</h3>
-      <p>The <strong>other participant was simulated.</strong> You were not paired with another person. The other participant's behaviour was pre-programmed to ensure consistent experiences across all participants. This is standard practice in experimental research.</p>
-      <p>We understand this may be surprising. The use of a simulated partner was essential to test our research question, which required that all participants experience identical partner behaviour regardless of experimental condition.</p>
+      <p>The <strong>other participant was simulated.</strong> You were not paired with another person. The other participant's behaviour was pre-programmed.</p>
+      <p>Because the other participant was simulated, no collision could have happened. Anyone who pressed Cross reached the goal. If your balloon popped while you were waiting, that was the balloon's own time limit; the other participant played no part.</p>
+      <p>We used a simulated partner so that everyone met the same partner behaviour, whichever condition they were in.</p>
+      <h3>Questions</h3>
+      <p>If you have any questions or concerns, please contact:<br>
+      <strong>Ali Giritlioğlu</strong>, ali.giritlioglu@ntu.ac.uk<br>
+      <strong>Dr Tom Kupfer</strong>, tom.kupfer@ntu.ac.uk<br>
+      <strong>Professor Daniel Fessler</strong> (Principal Investigator), dfessler@anthro.ucla.edu</p>
+      <p>If you have questions about your rights as a research subject, or you have concerns or suggestions and you want to talk to someone other than the researchers, you may contact the UCLA Office of the Human Research Protection Program by phone: (310) 206-2040; by email: participants@research.ucla.edu or by mail: Box 951406, Los Angeles, CA 90095-1406.</p>
+      <h3>Your bonus</h3>
+      <p>Your bonus depended only on your own result in the task, and it will be paid through Prolific whatever you choose below. If you ask for your data to be deleted, we delete all your responses. Prolific still receives your completion code, which tells us which bonus to pay you.</p>
       <h3>Re-consent</h3>
       <p>Now that you know the true purpose and method of this study, do you consent to your data being used?</p>
-      <p><em>Declining does not affect your compensation.</em></p>
+      <p><em>Declining does not affect your compensation or your bonus.</em></p>
     </div>
   `,
   choices: ['Yes, I consent', 'No, please delete my data'],
   data: { measure: 'reconsent' }
 });
 
-// ---- 15. DATA DEPOSIT (DataPipe -> OSF) ----
+// ---- 15. DATA DEPOSIT (DataPipe -> Dataverse) ----
 // Runs only for live (non-focus-group) sessions where re-consent was given.
 // Declined re-consent = nothing deposited, honouring "delete my data".
 timeline.push({
   timeline: [{
-    type: jsPsychPipe,
-    action: 'save',
-    experiment_id: DATAPIPE_EXPERIMENT_ID,
-    filename: DATA_FILENAME,
-    data_string: () => jsPsych.data.get().csv()
+    // Replaces plugin-pipe 0.4's save, which has no timeout and can hang for
+    // good on a non-JSON server reply. Same endpoint and payload; 20 s
+    // timeout, one retry; the outcome is recorded and the participant always
+    // moves on to the final screen and their completion code.
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: '<p>Saving data. Please do not close this page.</p>',
+    choices: 'NO_KEYS',
+    data: { measure: 'data_save' },
+    on_load: function() {
+      const payload = JSON.stringify({
+        experimentID: DATAPIPE_EXPERIMENT_ID,
+        filename: DATA_FILENAME,
+        data: jsPsych.data.get().filterCustom(function(t) { return t.measure !== 'data_save'; }).csv()
+      });
+      function attempt(n) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(function() { ctrl.abort(); }, 20000);
+        return fetch('https://pipe.jspsych.org/api/data/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': '*/*' },
+          body: payload,
+          signal: ctrl.signal
+        }).then(function(r) {
+          clearTimeout(timer);
+          return r.text().then(function(txt) {
+            if (r.ok) return { save_status: 'ok', save_http: r.status, save_attempts: n };
+            throw new Error('HTTP ' + r.status + ' ' + txt.slice(0, 150));
+          });
+        }).catch(function(err) {
+          clearTimeout(timer);
+          if (n < 2) return attempt(n + 1);
+          return { save_status: 'failed', save_error: String(err).slice(0, 200), save_attempts: n };
+        });
+      }
+      attempt(1).then(function(result) { jsPsych.finishTrial(result); });
+    }
   }],
   conditional_function: function() {
     if (FOCUS_GROUP) return false;
@@ -2921,8 +3127,8 @@ timeline.push({
         // Fallback: render the JSON to the body so it can be copy-pasted.
         document.body.innerHTML = '<div style="padding:24px;"><h3>Download failed — copy the text below into a .json file and upload that:</h3><textarea style="width:100%; height:60vh;">' + JSON.stringify({ fg_session_id: FG_SESSION_ID, html_version: 'realistic', assigned_condition: assignedCondition, fg_feedback_log: window.fgFeedbackLog || [], jspsych_data: jsPsych.data.get().values() }, null, 2) + '</textarea></div>';
       }
-    } else if (PROLIFIC_PID !== 'PREVIEW') {
-      window.location.href = PROLIFIC_COMPLETION_URL;
+    } else if (ON_PROLIFIC) {
+      window.location.href = completionUrlForOutcome();
     }
   }
 });

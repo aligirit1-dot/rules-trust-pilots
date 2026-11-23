@@ -12,7 +12,6 @@
   <script src="https://unpkg.com/@jspsych/plugin-survey-multi-choice@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-html-slider-response@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-call-function@1.1.3"></script>
-  <script src="https://unpkg.com/@jspsych-contrib/plugin-pipe@0.4"></script>
   <link href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css" rel="stylesheet">
   <style>
     .jspsych-content { max-width: 780px; font-size: 17px; line-height: 1.65; }
@@ -30,6 +29,16 @@
       background: #f8f9fa; border-left: 4px solid #6b7280; padding: 18px 24px;
       margin: 14px 0; border-radius: 6px; font-size: 16px; line-height: 1.65;
       text-align: left;
+    }
+    /* Notice renders as plain running text at the marker; no box, no highlight. */
+    /* Hide the survey plugins' required-question asterisk; questions stay required. */
+    .required { display: none; }
+    /* Preamble renders as plain running text at the top of the page; no box,
+       no highlight (the boxed styling read as distracting). Padding and type
+       match .vignette-box so the two blocks of prose line up on the page. */
+    .preamble-box {
+      padding: 0 26px 0 30px; margin: 12px 0 16px; font-size: 16.5px;
+      line-height: 1.7; text-align: left;
     }
     .decision-prompt {
       font-weight: 600; font-size: 17px; margin: 20px 0 10px;
@@ -64,7 +73,7 @@
 <script>
 // ================================================================
 // STUDY 1: HIGH-STAKES VIGNETTES
-// 3 Domains × 3 Conditions (No-Rule, Rule, Rule+Enforcement) = 9 cells
+// 5 Domains × 3 Conditions (No-Rule, Rule, Rule+Enforcement) = 15 cells (rebuilt 26/09/2026)
 // N per power analysis (see Study 1 design deck). Childcare domain
 // dropped 2026-05-19 after RA pre-pilot (see vignettes block below).
 // ================================================================
@@ -73,11 +82,15 @@ const urlParams = new URLSearchParams(window.location.search);
 const PROLIFIC_PID = urlParams.get('PROLIFIC_PID') || 'PREVIEW';
 const STUDY_ID = urlParams.get('STUDY_ID') || 'PREVIEW';
 const SESSION_ID = urlParams.get('SESSION_ID') || 'PREVIEW';
+// On Prolific if ANY of the three IDs arrived. The August pilot reached us with
+// STUDY_ID and SESSION_ID but no PROLIFIC_PID, so gating on the PID alone
+// skipped the completion redirect for all 123 (Prolific showed NO CODE).
+const ON_PROLIFIC = PROLIFIC_PID !== 'PREVIEW' || SESSION_ID !== 'PREVIEW' || STUDY_ID !== 'PREVIEW';
 const PROLIFIC_COMPLETION_URL = 'https://app.prolific.com/submissions/complete?cc=CAOLXQVO';
 
-// DataPipe (pipe.jspsych.org) -> OSF data deposit. Experiment ID set at
+// DataPipe (pipe.jspsych.org) data deposit (Google Drive experiment, set 23/11/2026; see log). Experiment ID set at
 // DataPipe registration; the save trial runs right before the end screen.
-const DATAPIPE_EXPERIMENT_ID = 'ncPULBp2sUUS';
+const DATAPIPE_EXPERIMENT_ID = 'lwr5rivRxfNS';
 const DATA_FILENAME = 'study1_' + PROLIFIC_PID + '_' +
   Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + '.csv';
 
@@ -85,65 +98,124 @@ const jsPsych = initJsPsych({
   show_progress_bar: true,
   auto_update_progress_bar: true,
   on_finish: function() {
-    if (PROLIFIC_PID !== 'PREVIEW') {
+    // Only completers who consented get the completion code. endExperiment()
+    // after a consent decline also lands here, and a decliner must not be
+    // redirected as a completion.
+    if (ON_PROLIFIC && window.CONSENTED === true) {
       window.location.href = PROLIFIC_COMPLETION_URL;
     }
   }
 });
 
 // --- Randomisation ---
-// childcare removed 2026-05-19 (see rationale at the vignettes block below)
-const domains = ['medical', 'financial', 'safety'];
+// Domain set replaced 2026-09-26 with the five-vignette set both PIs approved
+// (Tom 26/09 11:24 "Feel free to proceed"; Dan 25/09 17:03). Medical out;
+// hotel water and bus station in. Each participant sees ONE vignette in ONE
+// arm: 5 x 3 between-subjects. Previous build kept at
+// study1_vignettes.backup-before-five-vignette-rebuild-2026-09-26.html.
+const domains = ['food', 'toothache', 'motorbike', 'hotel', 'bus'];
 const conditions = ['norule', 'rule', 'rule_enforcement'];
-const assignedDomain = jsPsych.randomization.sampleWithoutReplacement(domains, 1)[0];
-const assignedCondition = jsPsych.randomization.sampleWithoutReplacement(conditions, 1)[0];
+// A participant who reloads the page keeps the vignette and arm they were
+// first given (23/11/2026): the draw is stored in this browser against their
+// Prolific ID (or session ID) and read back on reload. Without Prolific IDs
+// (a preview or a PI click-through) every load draws afresh.
+const ASSIGN_KEY = 's1_assign_' + (PROLIFIC_PID !== 'PREVIEW' ? PROLIFIC_PID : SESSION_ID);
+let storedAssign = null;
+if (ON_PROLIFIC) {
+  try { storedAssign = JSON.parse(window.localStorage.getItem(ASSIGN_KEY)); } catch (e) { storedAssign = null; }
+}
+const assignmentRestored = !!(storedAssign && domains.includes(storedAssign.d) && conditions.includes(storedAssign.c));
+const assignedDomain = assignmentRestored ? storedAssign.d : jsPsych.randomization.sampleWithoutReplacement(domains, 1)[0];
+const assignedCondition = assignmentRestored ? storedAssign.c : jsPsych.randomization.sampleWithoutReplacement(conditions, 1)[0];
+if (ON_PROLIFIC && !assignmentRestored) {
+  try { window.localStorage.setItem(ASSIGN_KEY, JSON.stringify({ d: assignedDomain, c: assignedCondition })); } catch (e) {}
+}
 
+// Actor phrases, fixed per vignette and identical across arms (DV document,
+// "Study 1 DVs September 16 2026 v2"). The bus one is neither the scenario's
+// "the young men" nor the notice's "Porters", because "Porters" appears only in
+// the rule arms and would make the questions differ between arms.
 const actorLabels = {
-  medical: 'the medical staff',
-  financial: 'the exchange clerk',
-  safety: 'the taxi driver'
+  food: 'the food cart vendor',
+  toothache: 'the dental clinic staff',
+  motorbike: 'the motorbike taxi driver',
+  hotel: 'the hotel clerk',
+  bus: 'the luggage loader'
 };
 const actor = actorLabels[assignedDomain];
 
 // ================================================================
 // VIGNETTE TEXT
-// Design principles (per Kupfer feedback, March–April 2026):
-//   1. Core + threat: foreign setting, unknown actor, no person-specific info, risk from uncertainty
-//   2. Safeguard block: describes available protective resource (norule), + rule (rule), + enforcement (rule_enforcement)
-//   3. Risk framing: uncertainty-based, NOT location-specific ("in this area have been known to..." removed)
-//   4. Rule condition: Gächter-style rule mandating use of the safeguard
-//   5. Rule+Enforcement condition: rule + domain-appropriate sanction
-//   6. Information matched across conditions — rule (+ enforcement) is the ONLY difference
-//   7. No third-party trust cues
-//   8. Structural separation: Block 1 (blue) = core + threat; Block 2 (grey/amber) = safeguard (+ rule) (+ enforcement)
+// Source of truth: Google Doc "Risk + Rule Vignettes September 16 2026", as
+// edited 25/09/2026 (Tom's penalty cuts accepted, Dan's toothache and hotel
+// lines in) plus the 26/09 cut of "to get ahead" from the motorbike rule,
+// agreed by Ali 26/09 after Dan cut it from the DV3 prompt.
+//   norule            = text with the marker removed
+//   rule              = text with `notice` at the marker
+//   rule_enforcement  = text with `notice` + `penalty` at the marker
+// Nothing else differs between arms. Each penalty comes from the same body
+// that issued the rule (Tom, 25/09). No (A)/(B) forced choice (removed 16/09).
+// outcome_q / appropriate_q are the DV1 / DV3 prompts from the DV document,
+// with Dan's 22/09 suggestions applied (tense of DV3 for food and hotel;
+// "to get ahead" cut from motorbike DV3).
 // ================================================================
+const PREAMBLE = `You are traveling alone in a country you have not been to before. You do not know how things work here, and you have no one to ask.`;
+
 const vignettes = {
-  medical: {
-    core_threat: `Imagine you have fallen seriously ill while travelling alone in a country you are visiting for the first time. You do not speak the local language. You have been taken to the nearest hospital, a small unfamiliar facility, where a doctor has determined you need a surgical procedure that would be difficult to safely defer until you return home. The procedure will be carried out by medical staff you have never met. You have no information about them, no way to look up the hospital's record, and no one to consult for advice. The procedure will involve a general anaesthetic and an abdominal incision. You will be fully unconscious throughout.\n\nPost-operative infection is a known risk with this type of procedure. One common cause is the use of surgical instruments that have not been properly sterilised before use.`,
-    norule: `You must now decide whether to proceed with the surgery at this hospital.`,
-    rule: `There is a rule that staff must check that each surgical instrument has been sterilised before use and reject any instrument that has not. The staff have been informed of this rule.\n\nYou must now decide whether to proceed with the surgery at this hospital.`,
-    rule_enforcement: `There is a rule that staff must check that each surgical instrument has been sterilised before use and reject any instrument that has not. The staff have been informed of this rule. Each instrument's sterilisation check is logged, and the use of any instrument not confirmed as sterilised is automatically flagged, resulting in disciplinary action against the responsible staff member.\n\nYou must now decide whether to proceed with the surgery at this hospital.`
+  food: {
+    text: `It’s been nine hours since you last ate, and the smell of grilled meat from a street vendor makes your stomach growl. You’re a few days from home, and you haven’t had a proper meal since yesterday. There has recently been a wave of food poisoning cases in the region, several traced back to street food made with meat that had spoiled or been kept out too long. Some of the cases were serious enough to put people in the hospital, something that has stuck with you since. At the vendor’s cart there is no way to tell where the meat came from or how long it has been sitting there; the skewers come to the grill from a covered tray carried out from behind the cart, and the char and the spices could be masking anything.\n\n[NOTICE GOES HERE]\n\nThe food cart vendor sees you standing there and offers you a plate, still steaming; the smell alone is making your mouth water. The alternative is to walk away and wait until you can get food somewhere where you can see how it’s prepared, going hungry for longer in a place where you don’t know your options.`,
+    notice: `Fixed to the side of the cart there’s a printed notice from the market that runs this row of stalls: “Vendors are required to buy meat only from licensed suppliers, keep it chilled until cooking, and discard anything unsold at the end of each day.”`,
+    penalty: `The notice also reads: “Vendors who do not comply lose their spot.”`,
+    outcome_q: `How likely are you to eat the food that the food cart vendor is serving?`,
+    appropriate_q: `How likely is it that the food cart vendor stored and prepared the food appropriately?`
   },
-  financial: {
-    core_threat: `Imagine you are travelling alone in a country you are visiting for the first time. You need to exchange a large sum of cash, all you have left for the trip, into local currency. The banks are closed, and the only one open nearby is a small independent currency exchange bureau on a side street. One clerk is on duty. You have no way to verify the business's reputation, no way to look up reviews, and no one to ask for a recommendation.\n\nUnfamiliar exchange bureaux are a common place for travellers to be short-changed, through unfavourable rates, hidden fees, or miscounted cash.`,
-    norule: `The national exchange rate is published daily by the central bank and displayed on a public board outside the bureau, visible to passers-by.\n\nYou must now decide whether to exchange your money at this bureau.`,
-    rule: `The national exchange rate is published daily by the central bank and displayed on a public board outside the bureau, visible to passers-by.\n\nThere is a rule that the clerk must apply the rate shown on the public board before handing over the cash. The clerk has been informed of this rule.\n\nYou must now decide whether to exchange your money at this bureau.`,
-    rule_enforcement: `The national exchange rate is published daily by the central bank and displayed on a public board outside the bureau, visible to passers-by.\n\nThere is a rule that the clerk must apply the rate shown on the public board before handing over the cash. The clerk has been informed of this rule. Any discrepancy between the posted rate and the rate applied is automatically logged and flagged, resulting in disciplinary action against the clerk.\n\nYou must now decide whether to exchange your money at this bureau.`
+  toothache: {
+    text: `A week from home, a dull ache in your back tooth sharpens into a throb that pulses with your heartbeat. This morning it got bad enough that you’re having trouble thinking straight, let alone eating or sleeping. You don’t know a dentist here. You go to a local clinic where they examine you right away: the tooth is badly abscessed and needs to come out; you know from a friend’s experience that there is a risk that the infection will spread to your jawbone if the tooth is not removed. Tooth removal is extremely painful, so, before the extraction the dentist will give you an injection of a local anesthetic. Unsafe injection practices remain a documented problem in this region: there have been many cases of hepatitis, and some of HIV, often traced to the reuse of needles and syringes in clinics.\n\n[NOTICE GOES HERE]\n\nYou’re sitting on the edge of the chair while the dentist sets out the tray behind you; there’s a rustle of packaging and instruments being set down, and then the dentist leans in with the syringe; you never saw whether the syringe came out of a new, sealed packet. Getting treated somewhere else would mean at least two more days like this, with the swelling likely getting worse.`,
+    notice: `On the wall of the treatment room there’s a notice: “This clinic requires staff to use new sterile needles and syringes, from sealed packaging, for every injection, and single-use sterile equipment for every procedure.”`,
+    penalty: `The notice also reads: “Staff who do not comply face suspension.”`,
+    outcome_q: `How likely are you to accept the injection and have the tooth extracted today?`,
+    appropriate_q: `How likely is it that the dental clinic staff will use a new sterile needle and syringe for your injection?`
   },
-  safety: {
-    core_threat: `Imagine you are travelling alone in a country you are visiting for the first time. You have just arrived at the airport and need to get to your hotel, which is approximately 25 minutes away by car. The roads are unfamiliar to you. You start to get into one of the taxis outside the airport. The driver is a stranger; you have no way of checking their record or reputation.\n\nPart of the route runs along fast open roads, where exceeding the speed limit is a major cause of serious accidents. How safely you arrive depends largely on whether the driver keeps to the limit, and once the journey is under way you have little ability to influence this.`,
-    norule: `You must now decide whether to take this taxi.`,
-    rule: `There is a rule that the driver must not exceed the speed limit. The driver has been informed of this rule.\n\nYou must now decide whether to take this taxi.`,
-    rule_enforcement: `There is a rule that the driver must not exceed the speed limit. The driver has been informed of this rule. The vehicle's speed is automatically logged, and any time the driver exceeds the limit this is flagged and reported to the taxi company, resulting in disciplinary action against the driver.\n\nYou must now decide whether to take this taxi.`
+  motorbike: {
+    text: `On the last part of a long day, a considerable distance from where you’re staying, the buses have stopped running for the night. It’s getting dark and you don’t know these streets. Motorbike taxis are a common way to get around here, quick, cheap, and easy to flag down, but riders who weave in and out of traffic make up a large share of motorbike crash injuries. A motorbike taxi pulls up and stops beside you, offering to get you back to your hotel in fifteen minutes for cash. The driver seems relaxed. All you have seen of his riding is the few meters it took him to pull in and stop; you have no way of knowing how he handles the bike at speed, or what the roads are like this time of night.\n\n[NOTICE GOES HERE]\n\nA proper taxi car could take upward of an hour to arrive at this hour in this area.`,
+    notice: `On the back of the bike there’s a decal with the name of the motorbike taxi company he rides for: “Company drivers must not weave between vehicles.”`,
+    penalty: `The sticker also reads: “Drivers who do not comply are dismissed by the company.”`,
+    outcome_q: `How likely are you to take the ride that the motorbike taxi driver is offering?`,
+    appropriate_q: `How likely is it that the motorbike taxi driver will ride without weaving between vehicles?`
   },
-  // childcare scenario removed 2026-05-19 following RA pre-pilot feedback that
-  // confirmed the silicon floor effect (proceed 14-24% across NR/R/R+E) is
-  // structural rather than wording-driven; majority of RAs would refuse
-  // regardless of rule or enforcement. Dan Fessler concurred (12 May 2026
-  // email reply) that there is no simple way to eliminate the floor while
-  // preserving realism. The stale block is preserved in
-  // study1_vignettes.backup-before-ra-feedback-edits-2026-05-19.html.
+  hotel: {
+    text: `You reach the hotel late, long after dark, at the end of a day of traveling in heat that still hasn’t lifted. It’s the cheapest room you could find. The clerk takes your money and walks you up to the room. The fan only moves the heat around; you rinse your face at the tap in the corner and it doesn’t help. The bottle you’ve carried all day has been empty since the bus, and the street outside is shuttered and dark. Your mouth is dry, your head has begun to ache, and you had to steady yourself on the stairs. Tap water here is known to be unsafe to drink unless it has been boiled, which anyone working in a hotel here would know: you’ve heard about many recent cases in this region of people laid up for days with severe diarrhea, some of them ending up in the hospital, traced to drinking water that hadn’t been properly boiled. There’s nothing in the room to heat water with.\n\n[NOTICE GOES HERE]\n\nThe clerk goes back down and comes up again with a glass pitcher, which he sets on the table by the bed; you never saw where he filled it. The water in it is clear and as warm as the room; there’s no smell when you take a sniff; it looks no different from what came out of the tap. Going without would mean waiting until the shops open in the morning, a night in this heat.`,
+    notice: `Fixed to the back of the room door there’s a printed notice issued by the hotel owner: “Hotel staff are required to boil all drinking water before it is supplied to guest rooms.”`,
+    penalty: `The notice also reads: “Staff who do not comply are dismissed.”`,
+    outcome_q: `How likely are you to drink the water that the hotel clerk has brought you?`,
+    appropriate_q: `How likely is it that the hotel clerk boiled the water before bringing it to your room?`
+  },
+  bus: {
+    text: `You get to the long-distance bus station later than you meant to. The bus for your destination has its engine running and its door open, and the next one on this route isn’t due for another six hours. Buses stand nose to tail along the platform with their underfloor compartments open, and young men have been working down the line, taking bags and carrying them around to the far side of the buses, where you can’t see what happens to them. Bags handed over here don’t always end up loaded into the bus that their owner is on: what you’ve heard is that, with several buses being loaded at once, the young men aren’t always careful which compartment a pack goes into, and a pack in the wrong compartment travels wherever that bus goes, and is lost forever.\n\n[NOTICE GOES HERE]\n\nThe driver is at the door shouting for everyone to board and you’re the last one at the door; there’s no time to walk your pack around to the other side of the bus and load it yourself. It’s the big pack you’ve carried the whole trip, too wide to get down the aisle in the crowded, standing-room only bus. Your passport and money are in your pocket; all of your other belongings are in the pack. The bags aren’t being tagged and no one writes anything down. One of the men turns and holds his hand out for your bag; he can see which bus you’re getting on. Once you get on the crowded bus you won’t be able to see what happens.`,
+    notice: `Beside the open door of the bus there’s a printed notice issued by the station management: “Porters loading this bus are required to load every bag into the compartment of the bus that its owner is boarding.”`,
+    penalty: `The notice also reads: “Porters who do not comply are barred from loading buses at this station.”`,
+    outcome_q: `How likely are you to hand your pack to the luggage loader?`,
+    appropriate_q: `How likely is it that the luggage loader will put your pack in the compartment of the bus you are boarding?`
+  }
 };
+
+// Build the scenario text for the assigned cell. The notice goes in as plain
+// text, an ordinary paragraph of the scenario, typographically identical to
+// the rest of the stem.
+function buildScenario(domain, condition) {
+  const v = vignettes[domain];
+  let noticeText = '';
+  if (condition === 'rule') {
+    noticeText = v.notice;
+  } else if (condition === 'rule_enforcement') {
+    noticeText = v.notice + ' ' + v.penalty;
+  }
+  // norule: marker and the blank lines around it come out together
+  const withNotice = noticeText
+    ? v.text.replace('[NOTICE GOES HERE]', noticeText)
+    : v.text.replace('\n\n[NOTICE GOES HERE]\n\n', '\n\n');
+  return withNotice.replace(/\n/g, '<br>');
+}
 
 // ================================================================
 // TIMELINE
@@ -160,6 +232,7 @@ timeline.push({
       session_id: SESSION_ID,
       assigned_domain: assignedDomain,
       assigned_condition: assignedCondition,
+      assignment_restored: assignmentRestored,
       study: 'study1_vignettes'
     });
   }
@@ -172,31 +245,30 @@ timeline.push({
     <div class="consent-box">
       <h2 style="text-align:center;">Participant Information</h2>
       <p style="text-align:center; font-style:italic; color:#475569; margin-bottom:12px;">Study title: <strong>Decision-making in unfamiliar situations</strong></p>
-      <p><strong>Ethics ID:</strong> IRB-25-0482 (UCLA)</p>
+      <p><strong>Ethics Reference:</strong> IRB-25-0482 (UCLA)</p>
 
       <h3>What is this study about?</h3>
-      <p>This study looks at how personality traits relate to the decisions people make in unfamiliar situations.</p>
+      <p>This study is part of a research project investigating how people make decisions in unfamiliar situations.</p>
 
       <h3>What will I do?</h3>
-      <p>You will complete one online session (approximately 5–10 minutes) involving a hypothetical scenario, brief questionnaires about your thoughts and feelings, and personality trait questions.</p>
+      <p>You will complete one online session (approximately 10 minutes) involving a hypothetical scenario, brief questionnaires about your thoughts and feelings, and personality trait questions.</p>
 
       <h3>Do I have to take part?</h3>
-      <p>Participation is voluntary. You can withdraw at any time by closing your browser. You have two weeks after completion to withdraw your data by contacting the researcher via Prolific using your Prolific ID.</p>
+      <p>You must be 18 or over to take part. Participation is voluntary. You can withdraw at any time by closing your browser. You have two weeks after completion to withdraw your data by contacting the researcher via Prolific using your Prolific ID. If you stop part-way, message us through Prolific and we will pay you for the time you spent.</p>
 
       <h3>Who is running this?</h3>
       <p><strong>Principal Investigator:</strong> Professor Daniel Fessler, UCLA Department of Anthropology (dfessler@anthro.ucla.edu)<br>
-      <strong>Lead Researcher:</strong> Ali Giritlioğlu (ali.giritlioglu@ntu.ac.uk)<br>
-      <strong>Co-Investigator:</strong> Dr Tom Kupfer, NTU (tom.kupfer@ntu.ac.uk)<br>
+      <strong>Lead Researcher and Primary Contact:</strong> Ali Giritlioğlu, Nottingham Trent University, UK (ali.giritlioglu@ntu.ac.uk)<br>
+      <strong>Co-Investigator:</strong> Dr Tom Kupfer, Nottingham Trent University, UK (tom.kupfer@ntu.ac.uk)<br>
       <strong>Funding:</strong> U.S. Air Force Office of Scientific Research (AFOSR)</p>
 
-      <h3>Confidentiality</h3>
-      <p>Data stored securely. Your identity is anonymous. Prolific ID deleted after the two-week withdrawal window. Anonymised data shared on OSF under CC BY-NC-SA licence.</p>
-
       <h3>Compensation</h3>
-      <p>£2.50 for approximately 10 minutes (if you do not fail more than one attention check).</p>
+      <p>£2.50 (or the equivalent in your local currency, as shown on Prolific) for approximately 10 minutes.</p>
 
-      <h3>Data Protection</h3>
-      <p>Complies with UK GDPR and Data Protection Act 2018.</p>
+      <h3>Confidentiality and Data Protection</h3>
+      <p>Your data are stored securely. We do not collect your name or contact details. The only identifier we collect is your Prolific ID, which is deleted after the two-week withdrawal window; after that we can no longer link your responses to you. Anonymised data are shared publicly online, in Harvard Dataverse or a similar research archive, under a CC BY-NC-SA licence. Your data are handled in accordance with UK data protection law (UK GDPR and the Data Protection Act 2018), regardless of your country of residence.</p>
+      <h3>Risks, benefits and your rights</h3>
+      <p>The scenario asks you to imagine a difficult travel situation involving a possible hazard to your health, safety or belongings, of a kind many travellers meet; some people may find it mildly unpleasant to imagine. There are no other risks beyond those of everyday life. There is no direct benefit to you; your responses contribute to research on decision-making. If you have questions about your rights as a research participant, you may contact the UCLA Office of the Human Research Protection Program by phone (+1 310 206 2040) or by email (participants@research.ucla.edu).</p>
     </div>
   `,
   choices: ['Continue to consent form']
@@ -207,12 +279,12 @@ timeline.push({
   stimulus: `
     <div class="consent-box">
       <h2 style="text-align:center;">Consent Form</h2>
-      <p>Version 4, dated 27.03.2026</p>
+      <p>Version 5, dated 27 September 2026</p>
       <p>By clicking "I consent" below, you confirm that:</p>
       <ul style="text-align:left;">
         <li>You have read and understood the information sheet and have had the opportunity to ask questions.</li>
         <li>You understand participation is voluntary and you can withdraw your data up to two weeks after participation.</li>
-        <li>You understand anonymous data will be publicly shared under a Creative Commons BY-NC-SA licence.</li>
+        <li>You understand anonymised data will be publicly shared under a Creative Commons BY-NC-SA licence.</li>
         <li>You understand outputs may be published, presented, or shared with collaborators and funders.</li>
         <li>You understand this research is supported by the U.S. Department of Defense (AFOSR).</li>
       </ul>
@@ -221,21 +293,22 @@ timeline.push({
   choices: ['I consent to participate', 'I do not consent'],
   on_finish: function(data) {
     if (data.response === 1) {
-      jsPsych.endExperiment('<p style="text-align:center;font-size:18px;">You have chosen not to consent. Thank you for your time.<br>You may close this window.</p>');
+      jsPsych.endExperiment('<p style="text-align:center;font-size:18px;">You have chosen not to consent. Thank you for your time.<br>Please go back to Prolific and return the submission so the slot is released.</p>');
+    } else {
+      window.CONSENTED = true;
     }
   }
 });
 
 // --- 2. VIGNETTE ---
-const vignetteData = vignettes[assignedDomain];
-const conditionText = vignetteData[assignedCondition];
+const scenarioHtml = buildScenario(assignedDomain, assignedCondition);
 
 timeline.push({
   type: jsPsychHtmlButtonResponse,
   stimulus: `
     <h2 style="text-align:center;">Please read the following scenario carefully</h2>
-    <div class="vignette-box">${vignetteData.core_threat.replace(/\n/g, '<br>')}</div>
-    <div class="${assignedCondition === 'norule' ? 'safeguard-box' : 'condition-box'}">${conditionText.replace(/\n/g, '<br>')}</div>
+    <div class="preamble-box">${PREAMBLE}</div>
+    <div class="vignette-box">${scenarioHtml}</div>
   `,
   choices: ['Continue'],
   post_trial_gap: 300
@@ -243,17 +316,20 @@ timeline.push({
 
 // --- 3. DEPENDENT VARIABLES ---
 
-// DV1: Willingness to Proceed (7-point)
+// DV1: Outcome likelihood (7-point). Scenario-specific prompt per domain from
+// vignettes[domain].outcome_q (RA focus group 2026-08-17; generic "proceed"
+// replaced). Anchors switched willing->likely to match; variable name kept
+// for the analysis code.
 timeline.push({
   type: jsPsychSurveyLikert,
   preamble: '<h2 style="text-align:center;">Your Decision</h2>',
   questions: [{
-    prompt: 'How willing would you be to proceed in this situation?',
-    labels: ['1<br><span class="scale-label">Not at all willing</span>',
+    prompt: vignettes[assignedDomain].outcome_q,
+    labels: ['1<br><span class="scale-label">Not at all likely</span>',
              '2', '3',
-             '4<br><span class="scale-label">Moderately willing</span>',
+             '4<br><span class="scale-label">Moderately likely</span>',
              '5', '6',
-             '7<br><span class="scale-label">Completely willing</span>'],
+             '7<br><span class="scale-label">Completely likely</span>'],
     required: true, name: 'willingness_to_proceed'
   }],
   data: { dv: 'willingness' }
@@ -273,12 +349,14 @@ timeline.push({
   data: { dv: 'trust' }
 });
 
-// DV3: Expected Appropriate Behaviour (0–100% slider)
+// DV3: Expected Appropriate Behaviour (0–100% slider). Scenario-specific
+// referent per domain from vignettes[domain].appropriate_q (RA focus group
+// 2026-08-17, the "behaved appropriately" ambiguity).
 timeline.push({
   type: jsPsychHtmlSliderResponse,
   stimulus: `
     <h2 style="text-align:center;">Expectations</h2>
-    <p style="text-align:center;font-size:16px;">How likely is it that ${actor} will behave appropriately in this situation?</p>
+    <p style="text-align:center;font-size:16px;">${vignettes[assignedDomain].appropriate_q}</p>
     <div class="slider-labels"><span>0% — Not at all likely</span><span>100% — Completely likely</span></div>
   `,
   labels: ['0%', '50%', '100%'],
@@ -293,7 +371,7 @@ timeline.push({
   type: jsPsychSurveyLikert,
   preamble: '<h2 style="text-align:center;">Predictability</h2>',
   questions: [{
-    prompt: `How predictable do you think ${actor}'s behaviour will be in this situation?`,
+    prompt: `How predictable do you think ${actor}'s behavior will be in this situation?`,
     labels: ['1<br><span class="scale-label">Not at all predictable</span>',
              '2', '3', '4', '5', '6',
              '7<br><span class="scale-label">Completely predictable</span>'],
@@ -302,20 +380,27 @@ timeline.push({
   data: { dv: 'predictability' }
 });
 
-// DV5: Perceived Constraint (7-point, reverse-coded)
+// DV5: Perceived Freedom (7-point). 27/09/2026: scale direction aligned with
+// Study 3 (low = no freedom, high = complete freedom), which flipped on
+// 2026-05-05 so that low-to-high matches the variable label. Variable renamed
+// perceived_constraint → perceived_freedom; analysis code that needs a
+// constraint score computes (8 - perceived_freedom). Pilot data (Aug 2026)
+// used the old direction and name.
 timeline.push({
   type: jsPsychSurveyLikert,
   preamble: '<h2 style="text-align:center;">Perceived Freedom</h2>',
   questions: [{
-    prompt: `To what extent does ${actor} have freedom to act however they want in their role?`,
-    labels: ['1<br><span class="scale-label">Complete freedom</span>',
+    prompt: `To what extent does ${actor} have freedom to act however they want to in their role?`,
+    labels: ['1<br><span class="scale-label">No freedom at all</span>',
              '2',
-             '3<br><span class="scale-label">Moderate freedom</span>',
-             '4', '5', '6',
-             '7<br><span class="scale-label">No freedom at all</span>'],
-    required: true, name: 'perceived_constraint'
+             '3<br><span class="scale-label">Limited freedom</span>',
+             '4',
+             '5<br><span class="scale-label">Moderate freedom</span>',
+             '6',
+             '7<br><span class="scale-label">Complete freedom</span>'],
+    required: true, name: 'perceived_freedom'
   }],
-  data: { dv: 'constraint' }
+  data: { dv: 'freedom' }
 });
 
 // --- 4. VULNERABILITY MANIPULATION CHECK ---
@@ -412,9 +497,34 @@ timeline.push({
   type: jsPsychSurveyText,
   preamble: '<h2 style="text-align:center;">Demographics</h2>',
   questions: [
-    { prompt: 'What is your age?', required: true, name: 'age', placeholder: '18–100' }
+    { prompt: 'What is your age?', required: true, name: 'age', placeholder: 'Age in years' }
   ],
-  data: { measure: 'demographics_age' }
+  data: { measure: 'demographics_age' },
+  // Numeric validation added 2026-08-18 (focus-group item 4). survey-text
+  // renders a real <form> and finishes on its submit event, so native
+  // constraint validation gates the Continue click. No new plugin;
+  // response.age is still a string.
+  on_load: function() {
+    const ageInput = document.querySelector('input[data-name="age"]');
+    ageInput.type = 'number';
+    ageInput.min = '13';
+    ageInput.max = '100';
+    ageInput.step = '1';
+  }
+});
+
+// Country of residence — asked before education so the education question can
+// branch to country-specific qualification lists (Fessler email 18 Aug 2026).
+// Mains recruit UK/US/Canada/Australia/NZ; 'Other' is a safety net and should
+// be rare if the Prolific residence screener is set.
+timeline.push({
+  type: jsPsychSurveyMultiChoice,
+  questions: [{
+    prompt: 'In which country do you currently live?',
+    options: ['United Kingdom', 'United States', 'Canada', 'Australia', 'New Zealand', 'Other'],
+    required: true, name: 'country_of_residence'
+  }],
+  data: { measure: 'demographics_country' }
 });
 
 timeline.push({
@@ -426,12 +536,6 @@ timeline.push({
       required: true, name: 'gender'
     },
     {
-      prompt: 'What is the highest level of education you have completed?',
-      options: ['No formal qualifications', 'GCSE/O-Level or equivalent', 'A-Level or equivalent',
-                'Bachelor\'s degree', 'Master\'s degree', 'Doctoral degree', 'Other professional qualification'],
-      required: true, name: 'education'
-    },
-    {
       prompt: 'What is your current employment status?',
       options: ['Employed full-time', 'Employed part-time', 'Self-employed',
                 'Unemployed', 'Student', 'Retired', 'Other'],
@@ -439,6 +543,74 @@ timeline.push({
     }
   ],
   data: { measure: 'demographics_main' }
+});
+
+// Education, branched on country of residence — same conditional-timeline
+// pattern as the children questions below. Each participant sees exactly one
+// branch; the response variable is `education` in every branch, so the data
+// keep a single education column. NOTE for analysis code: `education` now
+// arrives in its own trial row (measure: 'demographics_education'), no longer
+// inside the demographics_main row.
+//
+// Category sources: UK list unchanged from the previous version; US per
+// Census Bureau attainment categories; Canada per Statistics Canada highest
+// certificate (condensed); Australia per ABS/AQF; New Zealand per NZQF.
+//
+// ORDINAL MAPPING for cross-country analysis (edu_ord, ISCED-2011 bands;
+// apply at analysis time, not collected at runtime):
+//   1 below upper secondary . UK: No formal qualifications; GCSE/O-Level.
+//     US: Less than high school. CA: No certificate/diploma/degree.
+//     AU: Less than Year 12. NZ: No formal qualification.
+//   2 upper secondary ....... UK: A-Level. US: High school diploma or GED.
+//     CA: High school diploma. AU: Year 12. NZ: Secondary school (NCEA).
+//   3 post-secondary below bachelor's ... US: Some college; Associate.
+//     CA: Trades cert; College/CEGEP diploma. AU: Certificate I–IV;
+//     Diploma/Advanced Diploma. NZ: Certificate/diploma below bachelor's.
+//     UK: (no option at this band).
+//   4 bachelor's ............ all: Bachelor's; AU: Grad Cert/Diploma and
+//     NZ: PG cert/dip or Honours sit AQF/NZQF 8 — banded 4, defensibly 5.
+//   5 master's .............. all: Master's; US/CA: Professional degree.
+//   6 doctoral .............. all: Doctoral degree.
+//   NA/hand-code ............ UK: Other professional qualification; all
+//     'Other'-country options.
+const educationOptionsByCountry = {
+  'United Kingdom': ['No formal qualifications', 'GCSE/O-Level or equivalent', 'A-Level or equivalent',
+                     'Bachelor\'s degree', 'Master\'s degree', 'Doctoral degree', 'Other professional qualification'],
+  'United States':  ['Less than high school', 'High school diploma or GED', 'Some college, no degree',
+                     'Associate degree', 'Bachelor\'s degree', 'Master\'s degree',
+                     'Professional degree (e.g. MD, JD)', 'Doctoral degree'],
+  'Canada':         ['No certificate, diploma or degree', 'High school diploma or equivalent',
+                     'Trades certificate or apprenticeship', 'College, CEGEP or other non-university diploma',
+                     'Bachelor\'s degree', 'Master\'s degree', 'Professional degree (e.g. medicine, law)',
+                     'Doctoral degree'],
+  'Australia':      ['Less than Year 12', 'Year 12 or equivalent', 'Certificate I–IV (including trade certificate)',
+                     'Diploma or Advanced Diploma', 'Bachelor\'s degree', 'Graduate Certificate or Graduate Diploma',
+                     'Master\'s degree', 'Doctoral degree'],
+  'New Zealand':    ['No formal qualification', 'Secondary school qualification (e.g. NCEA)',
+                     'Certificate or diploma below bachelor\'s level', 'Bachelor\'s degree',
+                     'Postgraduate certificate or diploma, or Bachelor\'s with honours',
+                     'Master\'s degree', 'Doctoral degree'],
+  'Other':          ['Primary education or less', 'Secondary education',
+                     'Vocational or technical qualification', 'Bachelor\'s degree or equivalent',
+                     'Master\'s degree or equivalent', 'Doctoral degree or equivalent']
+};
+
+Object.keys(educationOptionsByCountry).forEach(function(country) {
+  timeline.push({
+    timeline: [{
+      type: jsPsychSurveyMultiChoice,
+      questions: [{
+        prompt: 'What is the highest level of education you have completed?',
+        options: educationOptionsByCountry[country],
+        required: true, name: 'education'
+      }],
+      data: { measure: 'demographics_education' }
+    }],
+    conditional_function: function() {
+      const countryTrial = jsPsych.data.get().filter({measure: 'demographics_country'}).last(1).values()[0];
+      return countryTrial && countryTrial.response && countryTrial.response.country_of_residence === country;
+    }
+  });
 });
 
 // Parenthood (Study 1 specific)
@@ -460,11 +632,93 @@ timeline.push({
       { prompt: 'How many children do you have?', required: true, name: 'num_children', placeholder: 'e.g. 2' },
       { prompt: 'What are their ages?', required: true, name: 'children_ages', placeholder: 'e.g. 3 and 7' }
     ],
-    data: { measure: 'demographics_children_detail' }
+    data: { measure: 'demographics_children_detail' },
+    // Numeric validation added 2026-08-18 (focus-group item 4), same native
+    // constraint-validation mechanism as the age trial. num_children becomes
+    // a bounded number input (1–20; this trial only runs after has_children
+    // = 'Yes'). children_ages stays free text so "3 and 7" or "3, 7" both
+    // work; a custom validity check requires whole numbers 0–60 and the
+    // count to match num_children.
+    on_load: function() {
+      const numInput = document.querySelector('input[data-name="num_children"]');
+      const agesInput = document.querySelector('input[data-name="children_ages"]');
+      numInput.type = 'number';
+      numInput.min = '1';
+      numInput.max = '20';
+      numInput.step = '1';
+      const CHILD_AGE_MIN = 0;
+      const CHILD_AGE_MAX = 60;
+      const checkAges = function() {
+        const raw = agesInput.value.trim();
+        if (raw === '') {
+          agesInput.setCustomValidity('');
+          return;
+        }
+        const tokens = raw.split(/[^0-9]+/).filter(function(t) { return t.length > 0; });
+        const ages = tokens.map(function(t) { return parseInt(t, 10); });
+        let msg = '';
+        if (ages.length === 0 ||
+            ages.some(function(a) { return a < CHILD_AGE_MIN || a > CHILD_AGE_MAX; })) {
+          msg = 'Please enter each child\'s age in years as a whole number between ' +
+                CHILD_AGE_MIN + ' and ' + CHILD_AGE_MAX + ', separated by commas ' +
+                '(for example: 3, 7). Use 0 for a child under one year old.';
+        } else if (numInput.value !== '' &&
+                   ages.length !== parseInt(numInput.value, 10)) {
+          msg = 'You entered ' + numInput.value + ' for number of children but listed ' +
+                ages.length + (ages.length === 1 ? ' age' : ' ages') +
+                '. Please list one age per child.';
+        }
+        agesInput.setCustomValidity(msg);
+      };
+      agesInput.addEventListener('input', checkAges);
+      numInput.addEventListener('input', checkAges);
+      checkAges();
+    }
   }],
   conditional_function: function() {
     const lastTrial = jsPsych.data.get().filter({measure: 'demographics_parenthood'}).last(1).values()[0];
     return lastTrial && lastTrial.response && lastTrial.response.has_children === 'Yes';
+  }
+});
+
+// --- 7b. DATA DEPOSIT (DataPipe -> Harvard Dataverse) ---
+// Runs BEFORE the debrief, so a participant who closes the tab on the debrief
+// screen still has their responses saved. Replaces plugin-pipe 0.4's save,
+// which has no timeout and can hang for good on a non-JSON server reply.
+// Same endpoint and payload as the plugin; 20 s timeout, one retry; the outcome
+// is recorded in the data and the participant always moves on.
+timeline.push({
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus: '<p>Saving data. Please do not close this page.</p>',
+  choices: 'NO_KEYS',
+  data: { measure: 'data_save' },
+  on_load: function() {
+    const payload = JSON.stringify({
+      experimentID: DATAPIPE_EXPERIMENT_ID,
+      filename: DATA_FILENAME,
+      data: jsPsych.data.get().filterCustom(function(t) { return t.measure !== 'data_save'; }).csv()
+    });
+    function attempt(n) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(function() { ctrl.abort(); }, 20000);
+      return fetch('https://pipe.jspsych.org/api/data/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': '*/*' },
+        body: payload,
+        signal: ctrl.signal
+      }).then(function(r) {
+        clearTimeout(timer);
+        return r.text().then(function(txt) {
+          if (r.ok) return { save_status: 'ok', save_http: r.status, save_attempts: n };
+          throw new Error('HTTP ' + r.status + ' ' + txt.slice(0, 150));
+        });
+      }).catch(function(err) {
+        clearTimeout(timer);
+        if (n < 2) return attempt(n + 1);
+        return { save_status: 'failed', save_error: String(err).slice(0, 200), save_attempts: n };
+      });
+    }
+    attempt(1).then(function(result) { jsPsych.finishTrial(result); });
   }
 });
 
@@ -473,24 +727,16 @@ timeline.push({
   type: jsPsychHtmlButtonResponse,
   stimulus: `
     <div class="debrief-box">
-      <h2 style="text-align:center;">Thank you for participating!</h2>
-      <p>This study explores how <strong>rules and enforcement</strong> affect people's willingness to trust unfamiliar individuals in high-stakes situations. Some participants were told that the person in the scenario was required to follow specific rules, some were also told about consequences for non-compliance, while others received no such information.</p>
-      <p>Your responses will help us understand the role that institutional rules play in building trust between strangers.</p>
+      <h2 style="text-align:center;">Thank you for participating</h2>
+      <p>This study explores how <strong>rules and enforcement</strong> affect people's willingness to trust unfamiliar individuals in high-stakes situations. Some participants saw a notice of rules the person in the scenario had to follow, some saw the same notice with a penalty added, and some saw no notice.</p>
       <p>If you have any questions or concerns, please contact:<br>
-      <strong>Ali Giritlioğlu</strong> — ali.giritlioglu@ntu.ac.uk<br>
-      <strong>Dr Tom Kupfer</strong> — tom.kupfer@ntu.ac.uk</p>
+      <strong>Ali Giritlioğlu</strong>, ali.giritlioglu@ntu.ac.uk<br>
+      <strong>Dr Tom Kupfer</strong>, tom.kupfer@ntu.ac.uk<br>
+      <strong>Professor Daniel Fessler</strong> (Principal Investigator), dfessler@anthro.ucla.edu</p>
+      <p>If you have questions about your rights as a research subject, or you have concerns or suggestions and you want to talk to someone other than the researchers, you may contact the UCLA Office of the Human Research Protection Program by phone: (310) 206-2040; by email: participants@research.ucla.edu or by mail: Box 951406, Los Angeles, CA 90095-1406.</p>
     </div>
   `,
   choices: ['Continue']
-});
-
-// --- 8b. DATA DEPOSIT (DataPipe -> OSF) ---
-timeline.push({
-  type: jsPsychPipe,
-  action: 'save',
-  experiment_id: DATAPIPE_EXPERIMENT_ID,
-  filename: DATA_FILENAME,
-  data_string: () => jsPsych.data.get().csv()
 });
 
 // --- 9. END ---
@@ -505,7 +751,7 @@ timeline.push({
   `,
   choices: ['Return to Prolific'],
   on_finish: function() {
-    if (PROLIFIC_PID !== 'PREVIEW') {
+    if (ON_PROLIFIC) {
       window.location.href = PROLIFIC_COMPLETION_URL;
     }
   }
