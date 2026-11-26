@@ -446,6 +446,18 @@
     .bz-mobile-block p { color:#475569; font-size:15px; line-height:1.6;
       margin:10px 0; }
     /* End desktop-only block --------------------------------------------- */
+    /* 26/11/2026 render fixes, layout only (no wording or logic change):
+       number inputs were a small unstyled box with the placeholder cut off;
+       a disabled Continue turned blue on hover and looked clickable;
+       Likert scales under a short question shrank until the end labels wrapped
+       (a minimum width only: scales under long questions are unchanged). */
+    #jspsych-survey-text-form input[type=number] { width: 8em; padding: 6px 8px; font: inherit; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .jspsych-btn:disabled:hover { background: #eee; }
+    #jspsych-survey-likert-form { min-width: 520px; }
+    /* 26/11/2026: "Balloon size" strip removed from view (Ali): its bar never
+       displayed (inline span, 0 x 0 px) and a working gauge would let
+       participants time the hidden 12 s pop. The JS still writes to it. */
+    .bz-header { display: none; }
   </style>
 </head>
 <body></body>
